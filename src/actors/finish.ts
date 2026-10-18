@@ -7,9 +7,10 @@ interface FinishProps extends Record<string, number | string | boolean> {
   width: number;
   height: number;
   collect: boolean;
+  counts: string;
 }
 
-/** A goal zone. Anything tagged "marble" that enters it counts as finished. */
+/** A goal zone. Anything with the tag named in `counts` (normally "marble") that enters it counts as finished. */
 export class Finish extends Actor<FinishProps> {
   readonly finished = new Set<string>();
   private flash = 0;
@@ -22,7 +23,7 @@ export class Finish extends Actor<FinishProps> {
   }
 
   onContact(other: Actor | null): void {
-    if (!other || !other.tags.has("marble") || this.finished.has(other.id)) return;
+    if (!other || !other.tags.has(this.props.counts) || this.finished.has(other.id)) return;
     this.finished.add(other.id);
     this.flash = 0.6;
     this.game.events.emit("finish", { finish: this, actor: other, time: this.game.time });
@@ -65,6 +66,13 @@ const finish: ActorDef = {
     { key: "width", label: "Width", kind: "number", default: 2, min: 0.2, max: 100, step: 0.1 },
     { key: "height", label: "Height", kind: "number", default: 1.5, min: 0.2, max: 100, step: 0.1 },
     { key: "collect", label: "Remove marbles that finish", kind: "boolean", default: false },
+    {
+      key: "counts",
+      label: "Counts tag",
+      kind: "string",
+      default: "marble",
+      help: 'What reaches this finish: anything with this tag. Marbles from a start are tagged "marble"; tag your vehicle "player".',
+    },
   ],
   create: (game, data) => new Finish(game, data),
 };

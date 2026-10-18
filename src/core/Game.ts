@@ -1,6 +1,7 @@
-import { World, Vec2, type Contact } from "planck";
+import { World, Vec2, type Body, type Contact } from "planck";
 import { Actor, reserveId } from "./Actor";
 import { EventBus } from "./events";
+import { Input } from "./input";
 import { getActorDef } from "./registry";
 import type { ActorData, CameraData, LevelData } from "./types";
 
@@ -22,6 +23,10 @@ export const STEP = 1 / 60;
  */
 export class Game {
   world!: World;
+  /** A fixed body for parts attached to "the world" rather than to another actor. */
+  ground!: Body;
+  /** Keys and sliders the player is using. Shared across reloads. */
+  readonly input = new Input();
   actors: Actor[] = [];
   readonly events = new EventBus<GameEvents>();
   level!: LevelData;
@@ -44,7 +49,13 @@ export class Game {
     this.level = structuredClone(level);
     this.world = new World({ gravity: Vec2(level.gravity[0], level.gravity[1]) });
     this.world.on("begin-contact", (c) => this.handleContact(c));
-    for (const data of level.actors) this.add(data);
+    this.ground = this.world.createBody({ type: "static" });
+    // Build in layer order so connectors find the bodies they join, but keep
+    // the level's own order in the actor list (it's the drawing order).
+    const built = new Map<ActorData, Actor>();
+    const order = [...level.actors].sort((a, b) => layerOf(a) - layerOf(b));
+    for (const data of order) built.set(data, this.add(data));
+    this.actors = level.actors.map((data) => built.get(data)!);
     // Store it back with every id and default filled in, so undo, reset and
     // saving all refer to the same actors.
     this.level = this.serialize();
@@ -89,17 +100,61 @@ export class Game {
   replace(actor: Actor, data: ActorData): Actor {
     const index = this.actors.indexOf(actor);
     if (index < 0) throw new Error(`Actor ${actor.id} is not in this game`);
+    const dependents = this.collectDependents(actor);
+    for (const d of [...dependents].reverse()) d.destroy();
     actor.destroy();
     const next = getActorDef(data.type).create(this, { ...data, id: actor.id });
     next.build();
     this.actors[index] = next;
+    this.rebuildAll(dependents);
     return next;
   }
 
-  /** Remove an actor right away. Only safe outside of a physics step. */
+  /**
+   * Rebuild everything attached to an actor (and everything attached to
+   * those), so joints follow it after it moves.
+   */
+  rebuildDependents(actor: Actor): void {
+    const dependents = this.collectDependents(actor);
+    for (const d of [...dependents].reverse()) d.destroy();
+    this.rebuildAll(dependents);
+  }
+
+  /** Everything attached to an actor, directly or through other parts, in build order. */
+  private collectDependents(actor: Actor): Actor[] {
+    const found: Actor[] = [];
+    const seen = new Set([actor.id]);
+    const visit = (id: string) => {
+      for (const other of this.dependentsOf(id)) {
+        if (seen.has(other.id)) continue;
+        seen.add(other.id);
+        found.push(other);
+        visit(other.id);
+      }
+    };
+    visit(actor.id);
+    return found;
+  }
+
+  private rebuildAll(destroyed: Actor[]): void {
+    for (const old of destroyed) {
+      const next = getActorDef(old.type).create(this, old.serialize());
+      next.transient = old.transient;
+      next.build();
+      this.actors[this.actors.indexOf(old)] = next;
+    }
+  }
+
+  dependentsOf(id: string): Actor[] {
+    return this.actors.filter((a) => a.dependsOn().includes(id));
+  }
+
+  /** Remove an actor right away, along with anything attached to it. Only safe outside of a physics step. */
   removeNow(actor: Actor): void {
-    actor.destroy();
+    if (!this.actors.includes(actor)) return;
     this.actors = this.actors.filter((a) => a !== actor);
+    for (const dependent of this.dependentsOf(actor.id)) this.removeNow(dependent);
+    actor.destroy();
   }
 
   /**
@@ -170,7 +225,7 @@ export class Game {
   }
 
   private clear(): void {
-    for (const actor of this.actors) actor.destroy();
+    // The old world is simply dropped, which frees every body and joint in it.
     this.actors = [];
     this.pendingRemoval.clear();
     this.time = 0;
@@ -178,4 +233,8 @@ export class Game {
     this.running = false;
     this.started = false;
   }
+}
+
+function layerOf(data: ActorData): number {
+  return getActorDef(data.type).layer ?? 0;
 }

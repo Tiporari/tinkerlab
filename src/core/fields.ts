@@ -31,3 +31,12 @@ export function dynamicField(dynamic: boolean): PropField {
     help: "Off makes it a fixed part of the course.",
   };
 }
+
+/** Which keys or slider drive an active part. See input.ts for the format. */
+export function controlField(control: string, label = "Control"): PropField {
+  return { key: "control", label, kind: "control", default: control };
+}
+
+export function reverseField(): PropField {
+  return { key: "reverse", label: "Reverse", kind: "boolean", default: false, help: "Swap the direction the control drives it." };
+}

@@ -9,6 +9,7 @@ import { Inspector } from "./editor/Inspector";
 import { Palette } from "./editor/Palette";
 import { builtinLevels, firstMarbleRun } from "./levels";
 import { blankLevel } from "./levels/blank";
+import { ControlPanel } from "./ui/ControlPanel";
 
 registerBuiltinActors();
 
@@ -66,6 +67,7 @@ if (game.level.camera) camera.set(game.level.camera);
 const editor = new Editor(game, camera, canvas);
 new Palette($("#palette"), editor);
 new Inspector($("#inspector"), editor);
+const controlPanel = new ControlPanel($("#controls"), game);
 attachViewControls(canvas, camera, (e) => !editor.enabled || e.button === 1 || e.button === 2);
 
 editor.events.on("change", (level) => {
@@ -118,11 +120,14 @@ function togglePlay(): void {
     editor.setTool("select");
     game.commit();
     game.play();
+    controlPanel.refresh();
   }
   updateButtons();
 }
 
 function stop(): void {
+  game.input.clear();
+  controlPanel.hide();
   game.reset();
   editor.select(editor.selected);
   updateButtons();
@@ -144,9 +149,19 @@ stopButton.addEventListener("click", stop);
 undoButton.addEventListener("click", () => editor.undo());
 redoButton.addEventListener("click", () => editor.redo());
 
+/** Keys the page would otherwise use to scroll. */
+const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+
 window.addEventListener("keydown", (e) => {
   const t = e.target;
-  if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement) return;
+  if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement) {
+    if (!(t instanceof HTMLInputElement && t.type === "range" && game.started)) return;
+  }
+  if (game.started && !e.ctrlKey && !e.metaKey && e.code !== "Space" && e.code !== "KeyR") {
+    game.input.press(e.code);
+    if (SCROLL_KEYS.has(e.code)) e.preventDefault();
+    return;
+  }
   if (e.code === "Space") {
     e.preventDefault();
     togglePlay();
@@ -156,6 +171,9 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
   }
 });
+
+window.addEventListener("keyup", (e) => game.input.release(e.code));
+window.addEventListener("blur", () => game.input.keys.clear());
 
 // ---- Files -------------------------------------------------------------------
 
@@ -185,6 +203,16 @@ importInput.addEventListener("change", async () => {
   }
 });
 
+/** While playing, keep anything tagged "player" in view. */
+function followPlayer(dt: number): void {
+  const player = game.actors.find((a) => a.tags.has("player") && a.body);
+  if (!player?.body) return;
+  const p = player.body.getPosition();
+  const ease = 1 - Math.exp(-dt * 4);
+  camera.x += (p.x - camera.x) * ease;
+  camera.y += (p.y + 1 - camera.y) * ease;
+}
+
 // ---- Loop --------------------------------------------------------------------
 
 const resize = () => renderer.resize();
@@ -194,8 +222,10 @@ updateButtons();
 
 let last = performance.now();
 function frame(now: number): void {
-  game.tick((now - last) / 1000);
+  const dt = (now - last) / 1000;
+  game.tick(dt);
   last = now;
+  if (game.started) followPlayer(dt);
   renderer.render(game, (r) => editor.drawOverlay(r));
   if (game.started) {
     const timeText = lastFinishTime === null ? "" : ` · last at ${lastFinishTime.toFixed(1)}s`;

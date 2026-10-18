@@ -21,15 +21,28 @@ export interface ActorDef {
    * - "click" (default): click to drop it where you click
    * - "drag-line": drag from one end to the other; sets `width` and `angle` (ramps, walls)
    * - "draw-path": draw freehand; sets `points` (curves, funnels)
+   * - "connect": drag from one thing to another; sets `a`, `b` and the anchor points (springs, ropes, pistons)
+   * - "pin": click where two things overlap; joins them at that point (hinges)
+   * - "attach": click on a thing to bolt this onto it (wheels, thrusters)
    */
   placement?: Placement;
+  /**
+   * Build order. Things that connect other things (springs, wheels, hinges)
+   * use a higher layer so the bodies they join exist first. Default 0.
+   */
+  layer?: number;
+  /**
+   * Which of x, y and angle the editor shows and lets you drag. Parts that
+   * hang off another actor work out their own position. Default: all three.
+   */
+  poseFields?: ("x" | "y" | "angle")[];
   /** Set false to hide it from the editor palette. */
   palette?: boolean;
   props: PropField[];
   create(game: Game, data: ActorData): Actor;
 }
 
-export type Placement = "click" | "drag-line" | "draw-path";
+export type Placement = "click" | "drag-line" | "draw-path" | "connect" | "pin" | "attach";
 
 const defs = new Map<string, ActorDef>();
 

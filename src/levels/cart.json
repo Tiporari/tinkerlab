@@ -1,0 +1,21 @@
+{
+  "format": "tinkerlab/level",
+  "version": 1,
+  "name": "Drive the cart",
+  "gravity": [0, -10],
+  "camera": { "x": 0, "y": 2, "zoom": 40 },
+  "actors": [
+    { "id": "ground-1", "type": "block", "x": 10, "y": -0.5, "props": { "width": 44, "height": 1, "friction": 0.9 } },
+    { "id": "wall-left", "type": "block", "x": -11.5, "y": 2, "props": { "width": 1, "height": 6 } },
+    { "id": "bump-1", "type": "block", "x": 6, "y": 0.1, "angle": 0.2, "props": { "width": 4, "height": 0.3, "friction": 0.9 } },
+    { "id": "bump-2", "type": "block", "x": 9.9, "y": 0.1, "angle": -0.2, "props": { "width": 4, "height": 0.3, "friction": 0.9 } },
+    { "id": "crate-1", "type": "block", "x": 15, "y": 0.5, "props": { "width": 1, "height": 1, "dynamic": true, "density": 0.3, "color": "#b45309" } },
+
+    { "id": "cart-body", "type": "block", "x": 0, "y": 1.2, "tags": ["player"], "props": { "width": 2.6, "height": 0.5, "dynamic": true, "density": 1, "color": "#2563eb" } },
+    { "id": "wheel-back", "type": "wheel", "x": -0.9, "y": 0.85, "props": { "a": "cart-body", "ax": -0.9, "ay": -0.35, "radius": 0.45 } },
+    { "id": "wheel-front", "type": "wheel", "x": 0.9, "y": 0.85, "props": { "a": "cart-body", "ax": 0.9, "ay": -0.35, "radius": 0.45 } },
+
+    { "id": "finish-1", "type": "finish", "x": 25, "y": 1, "props": { "width": 2, "height": 2, "counts": "player" } },
+    { "id": "wall-right", "type": "block", "x": 31.5, "y": 2, "props": { "width": 1, "height": 6 } }
+  ]
+}

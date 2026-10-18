@@ -1,0 +1,35 @@
+{
+  "format": "tinkerlab/level",
+  "version": 1,
+  "name": "Machine parts playground",
+  "gravity": [0, -10],
+  "camera": { "x": 0.5, "y": 3.5, "zoom": 28 },
+  "actors": [
+    { "id": "floor", "type": "block", "x": 0, "y": -1, "props": { "width": 30, "height": 0.6, "friction": 0.8 } },
+
+    { "id": "pendulum-bob", "type": "ball", "x": -9, "y": 5, "props": { "radius": 0.4, "density": 3, "color": "#ef4444" } },
+    { "id": "pendulum-rope", "type": "rope", "x": -12, "y": 8, "props": { "a": "", "b": "pendulum-bob", "ax": -12, "ay": 8, "bx": 0, "by": 0 } },
+
+    { "id": "trampoline", "type": "block", "x": -5, "y": 0.6, "props": { "width": 2.4, "height": 0.2, "dynamic": true, "color": "#16a34a" } },
+    { "id": "tramp-spring-l", "type": "spring", "x": -6, "y": 0.6, "props": { "a": "trampoline", "b": "floor", "ax": -1, "ay": 0, "bx": -6, "by": 0.3, "stiffness": 4 } },
+    { "id": "tramp-spring-r", "type": "spring", "x": -4, "y": 0.6, "props": { "a": "trampoline", "b": "floor", "ax": 1, "ay": 0, "bx": -4, "by": 0.3, "stiffness": 4 } },
+    { "id": "bouncy-ball", "type": "ball", "x": -5, "y": 5, "props": { "radius": 0.3, "bounciness": 0.6, "color": "#8b5cf6" } },
+
+    { "id": "windmill-post", "type": "block", "x": 0, "y": 1.5, "props": { "width": 0.3, "height": 4.4 } },
+    { "id": "windmill-arm", "type": "block", "x": 0, "y": 3.5, "props": { "width": 3.6, "height": 0.2, "dynamic": true, "color": "#f59e0b" } },
+    { "id": "windmill-motor", "type": "hinge", "x": 0, "y": 3.5, "props": { "a": "windmill-arm", "b": "windmill-post", "ax": 0, "ay": 0, "bx": 0, "by": 2, "control": "always", "speed": 0.25 } },
+
+    { "id": "rocket", "type": "block", "x": 4, "y": -0.35, "props": { "width": 0.5, "height": 0.7, "dynamic": true, "color": "#e11d48" } },
+    { "id": "rocket-engine", "type": "thruster", "x": 4, "y": -0.7, "props": { "a": "rocket", "ax": 0, "ay": -0.35, "force": 25, "control": "key:KeyW" } },
+
+    { "id": "arm-base", "type": "block", "x": 7.5, "y": 0, "props": { "width": 0.4, "height": 1.4 } },
+    { "id": "arm-forearm", "type": "block", "x": 8.6, "y": 0.6, "props": { "width": 2, "height": 0.25, "dynamic": true, "color": "#fb7185" } },
+    { "id": "arm-elbow", "type": "hinge", "x": 7.6, "y": 0.6, "props": { "a": "arm-forearm", "b": "arm-base", "ax": -1, "ay": 0, "bx": 0.1, "by": 0.6 } },
+    { "id": "arm-muscle", "type": "muscle", "x": 7.6, "y": -0.5, "props": { "a": "arm-base", "b": "arm-forearm", "ax": 0.1, "ay": -0.5, "bx": 0.4, "by": 0, "control": "key:KeyJ", "strength": 6 } },
+
+    { "id": "pusher-wall", "type": "block", "x": 10.5, "y": 0.5, "props": { "width": 0.4, "height": 2.4 } },
+    { "id": "pusher-plate", "type": "block", "x": 11.5, "y": -0.2, "props": { "width": 0.2, "height": 0.9, "dynamic": true, "color": "#64748b" } },
+    { "id": "pusher", "type": "piston", "x": 10.7, "y": -0.2, "props": { "a": "pusher-wall", "b": "pusher-plate", "ax": 0.2, "ay": -0.7, "bx": -0.1, "by": 0, "control": "keys:ArrowLeft,ArrowRight", "extend": 2, "retract": 0.2 } },
+    { "id": "pusher-crate", "type": "block", "x": 12.5, "y": -0.2, "props": { "width": 0.9, "height": 0.9, "dynamic": true, "density": 0.5, "color": "#b45309" } }
+  ]
+}
