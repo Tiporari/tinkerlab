@@ -22,9 +22,28 @@ npm test         # run the tests (includes playing the marble run headless)
 npm run build    # build a static site into dist/ you can host anywhere
 ```
 
-Controls: drag to pan, scroll or pinch to zoom, **Space** plays and pauses,
-**R** resets. **Save level** downloads the current level as JSON and **Open
-level** loads one.
+## Building and playing
+
+The game has two modes. In **build** mode you edit the level; press **Play**
+(or Space) to run it, and **Stop** (or R) to go back to exactly what you built.
+
+| To do this | Do this |
+| --- | --- |
+| Add a ball, finish or start | pick it on the left, then click |
+| Add a ramp or wall | pick **Block**, then drag from one end to the other |
+| Draw a curve or funnel | pick **Path**, then draw |
+| Select, move | **Select** tool, click or drag a thing |
+| Rotate | drag the round handle above it, or **Q** / **E** (hold Shift for 1°) |
+| Nudge | arrow keys |
+| Change its settings | use the panel on the right |
+| Duplicate / delete | **Ctrl+D** / **Delete** |
+| Undo / redo | **Ctrl+Z** / **Ctrl+Y** |
+| Snap to grid on or off | **G**, or the Snap box |
+| Pan | drag empty space, or right/middle-drag; two fingers on touch |
+| Zoom | scroll wheel or pinch |
+
+Your work is autosaved in the browser. **Save file** downloads the level as
+JSON and **Open file** loads one, so you can keep and share levels.
 
 ## How it fits together
 
@@ -36,6 +55,7 @@ src/
     registry.ts  the list of actor types the game knows about
     Renderer.ts  draws to a canvas in world units (meters, y up)
     Camera.ts    pan, zoom and rotation
+  editor/      build mode: tools, palette, settings panel, undo
   actors/      one file per kind of object (ball, block, path, start, finish)
   levels/      built-in levels as JSON
 tests/         headless tests that run levels without a browser
@@ -85,8 +105,18 @@ export default bouncer;
 
 Then use it in a level with `{ "type": "bouncer", "x": 0, "y": 5 }`.
 
-The `props` list does double duty: it supplies defaults for anything a level
-leaves out, and the editor (coming next) will build its settings panel from it.
+It shows up in the editor's palette straight away. The `props` list does
+double duty: it supplies defaults for anything a level leaves out, and the
+editor builds the settings panel from it (sliders for numbers with a `min`
+and `max`, checkboxes for booleans, color pickers for colors).
+
+Optional `ActorDef` fields for the editor:
+
+| Field | What it does |
+| --- | --- |
+| `icon` | a symbol or emoji for the palette button |
+| `placement` | `"click"` (default) drops it where you click; `"drag-line"` lets you drag it out, setting `width` and `angle`; `"draw-path"` lets you draw it, setting `points` |
+| `palette: false` | hides it from the palette |
 
 Actors can also override these hooks:
 
@@ -96,6 +126,8 @@ Actors can also override these hooks:
 | `update(dt)` | every physics step (60 per second) |
 | `onContact(other, contact)` | when this actor starts touching another |
 | `draw(renderer)` | every frame; the default draws the body's shapes |
+| `hitTest(x, y, tolerance)` | the editor asks if a click landed on it; the default checks the body's shapes |
+| `getBounds()` | the box the editor draws when it's selected |
 | `destroy()` | when removed; extend it if you made extra bodies or joints |
 
 Actors talk to each other through `game.events`, for example
@@ -124,7 +156,7 @@ actor type's default.
 ## Roadmap
 
 1. **Core framework and a marble run** (done)
-2. **Basic editor**: draw and drag objects, edit their settings, build and play modes
+2. **Basic editor**: draw and drag objects, edit their settings, build and play modes (done)
 3. **Machine parts and controls**: springs, ropes, motor wheels, pistons, muscles, thrusters, keyboard and slider controls
 4. **Images, scripting and bigger worlds**: image import with masking, large scrolling levels, script nodes
 

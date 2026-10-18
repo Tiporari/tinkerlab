@@ -10,19 +10,30 @@
   <body>
     <header class="toolbar">
       <strong class="brand">TinkerLab</strong>
-      <button id="play" title="Play / pause (Space)">▶ Play</button>
-      <button id="reset" title="Reset (R)">↺ Reset</button>
+      <button id="play" class="primary" title="Play / pause (Space)">▶ Play</button>
+      <button id="stop" title="Stop and go back to building (R)">■ Stop</button>
+      <span class="divider"></span>
+      <button id="undo" title="Undo (Ctrl+Z)">↶ Undo</button>
+      <button id="redo" title="Redo (Ctrl+Y)">↷ Redo</button>
       <span class="spacer"></span>
-      <button id="export" title="Save the level as a JSON file">Save level</button>
+      <button id="new" title="Start a new empty level">New</button>
+      <select id="examples" title="Load an example level">
+        <option value="">Examples…</option>
+      </select>
+      <button id="export" title="Save the level as a JSON file">Save file</button>
       <label class="button" title="Open a level JSON file">
-        Open level<input id="import" type="file" accept=".json,application/json" hidden />
+        Open file<input id="import" type="file" accept=".json,application/json" hidden />
       </label>
     </header>
-    <main>
-      <canvas id="view"></canvas>
-      <div id="hud" class="hud"></div>
-      <div class="hint">Drag to pan · scroll or pinch to zoom · Space plays · R resets</div>
-    </main>
+    <div class="workspace">
+      <aside id="palette" class="palette"></aside>
+      <main>
+        <canvas id="view"></canvas>
+        <div id="hud" class="hud"></div>
+        <div id="hint" class="hint"></div>
+      </main>
+      <aside id="inspector" class="inspector"></aside>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

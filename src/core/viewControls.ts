@@ -1,8 +1,17 @@
 import type { Camera } from "./Camera";
 
-/** Drag to pan, wheel or two-finger pinch to zoom. Works with mouse, pen and touch. */
-export function attachViewControls(canvas: HTMLCanvasElement, camera: Camera): void {
+/**
+ * Drag to pan, wheel or two-finger pinch to zoom. Works with mouse, pen and touch.
+ * `canPan` decides whether a one-pointer drag pans; when it says no, the
+ * pointer is left for something else (like the editor) to handle.
+ */
+export function attachViewControls(
+  canvas: HTMLCanvasElement,
+  camera: Camera,
+  canPan: (e: PointerEvent) => boolean = () => true,
+): void {
   const pointers = new Map<number, { x: number; y: number }>();
+  const panning = new Set<number>();
   let pinchDistance = 0;
 
   const local = (e: PointerEvent | WheelEvent) => {
@@ -13,7 +22,8 @@ export function attachViewControls(canvas: HTMLCanvasElement, camera: Camera): v
   canvas.addEventListener("pointerdown", (e) => {
     canvas.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, local(e));
-    canvas.classList.add("dragging");
+    if (canPan(e)) panning.add(e.pointerId);
+    if (panning.has(e.pointerId)) canvas.classList.add("dragging");
     if (pointers.size === 2) pinchDistance = distance([...pointers.values()]);
   });
 
@@ -23,6 +33,7 @@ export function attachViewControls(canvas: HTMLCanvasElement, camera: Camera): v
     const next = local(e);
     pointers.set(e.pointerId, next);
     if (pointers.size === 1) {
+      if (!panning.has(e.pointerId)) return;
       camera.panBy(next.x - prev.x, next.y - prev.y);
     } else if (pointers.size === 2) {
       const pts = [...pointers.values()];
@@ -37,6 +48,7 @@ export function attachViewControls(canvas: HTMLCanvasElement, camera: Camera): v
 
   const end = (e: PointerEvent) => {
     pointers.delete(e.pointerId);
+    panning.delete(e.pointerId);
     if (pointers.size < 2) pinchDistance = 0;
     if (pointers.size === 0) canvas.classList.remove("dragging");
   };

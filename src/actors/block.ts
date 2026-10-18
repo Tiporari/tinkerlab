@@ -36,7 +36,9 @@ const block: ActorDef = {
   type: "block",
   label: "Block",
   category: "Shapes",
-  description: "A rectangle. Tilt it to make a ramp.",
+  icon: "▬",
+  placement: "drag-line",
+  description: "A rectangle. Drag to draw a ramp or wall.",
   props: [
     { key: "width", label: "Width", kind: "number", default: 4, min: 0.05, max: 200, step: 0.1 },
     { key: "height", label: "Height", kind: "number", default: 0.3, min: 0.05, max: 200, step: 0.1 },

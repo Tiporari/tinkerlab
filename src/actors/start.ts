@@ -1,4 +1,4 @@
-import { Actor } from "../core/Actor";
+import { Actor, type Bounds } from "../core/Actor";
 import type { Renderer } from "../core/Renderer";
 import type { ActorDef } from "../core/registry";
 
@@ -36,6 +36,19 @@ export class Start extends Actor<StartProps> {
     }
   }
 
+  hitTest(x: number, y: number, tolerance = 0): boolean {
+    return Math.hypot(x - this.x, y - this.y) <= this.markerRadius + tolerance;
+  }
+
+  getBounds(): Bounds {
+    const r = this.markerRadius;
+    return { minX: this.x - r, minY: this.y - r, maxX: this.x + r, maxY: this.y + r };
+  }
+
+  private get markerRadius(): number {
+    return Math.max(0.3, this.props.radius * 1.8);
+  }
+
   private dropMarble(): void {
     const colors = this.props.colors.split(",").map((c) => c.trim()).filter(Boolean);
     const marble = this.game.spawn({
@@ -54,7 +67,7 @@ export class Start extends Actor<StartProps> {
 
   draw(r: Renderer): void {
     const { ctx } = r;
-    const radius = this.props.radius * 1.8;
+    const radius = this.markerRadius;
     ctx.beginPath();
     ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
     ctx.setLineDash([6 * r.px, 4 * r.px]);
@@ -70,6 +83,7 @@ const start: ActorDef = {
   type: "start",
   label: "Start",
   category: "Course",
+  icon: "▶",
   description: "Drops marbles when you press play.",
   props: [
     { key: "count", label: "Marbles", kind: "number", default: 1, min: 1, max: 100, step: 1 },

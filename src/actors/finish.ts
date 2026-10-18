@@ -59,6 +59,7 @@ const finish: ActorDef = {
   type: "finish",
   label: "Finish",
   category: "Course",
+  icon: "⚑",
   description: "Counts marbles that reach it.",
   props: [
     { key: "width", label: "Width", kind: "number", default: 2, min: 0.2, max: 100, step: 0.1 },
