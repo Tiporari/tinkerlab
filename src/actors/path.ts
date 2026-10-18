@@ -36,6 +36,8 @@ const path: ActorDef = {
   type: "path",
   label: "Path",
   category: "Shapes",
+  icon: "〰",
+  placement: "draw-path",
   description: "A drawn line that things can roll along.",
   props: [
     {

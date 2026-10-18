@@ -4,21 +4,102 @@ import { Game } from "./core/Game";
 import { Renderer } from "./core/Renderer";
 import { attachViewControls } from "./core/viewControls";
 import type { LevelData } from "./core/types";
-import { firstMarbleRun } from "./levels";
+import { Editor } from "./editor/Editor";
+import { Inspector } from "./editor/Inspector";
+import { Palette } from "./editor/Palette";
+import { builtinLevels, firstMarbleRun } from "./levels";
+import { blankLevel } from "./levels/blank";
 
 registerBuiltinActors();
 
-const canvas = document.querySelector<HTMLCanvasElement>("#view")!;
-const hud = document.querySelector<HTMLDivElement>("#hud")!;
-const playButton = document.querySelector<HTMLButtonElement>("#play")!;
-const resetButton = document.querySelector<HTMLButtonElement>("#reset")!;
-const exportButton = document.querySelector<HTMLButtonElement>("#export")!;
-const importInput = document.querySelector<HTMLInputElement>("#import")!;
+const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
+const canvas = $<HTMLCanvasElement>("#view");
+const hud = $<HTMLDivElement>("#hud");
+const hint = $<HTMLDivElement>("#hint");
+const playButton = $<HTMLButtonElement>("#play");
+const stopButton = $<HTMLButtonElement>("#stop");
+const undoButton = $<HTMLButtonElement>("#undo");
+const redoButton = $<HTMLButtonElement>("#redo");
+const examples = $<HTMLSelectElement>("#examples");
+const importInput = $<HTMLInputElement>("#import");
+
+// ---- Autosave (per browser, so a refresh never loses work) ------------------
+
+const AUTOSAVE_KEY = "tinkerlab.autosave";
+
+function loadAutosave(): LevelData | null {
+  try {
+    const raw = localStorage.getItem(AUTOSAVE_KEY);
+    const level = raw ? (JSON.parse(raw) as LevelData) : null;
+    return level?.format === "tinkerlab/level" ? level : null;
+  } catch {
+    return null;
+  }
+}
+
+function autosave(level: LevelData): void {
+  try {
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ ...level, camera: camera.toData() }));
+  } catch {
+    // Storage can be full or blocked; autosave is a convenience, so carry on.
+  }
+}
+
+// ---- Setup -------------------------------------------------------------------
 
 const camera = new Camera();
 const renderer = new Renderer(canvas, camera);
-const game = new Game(firstMarbleRun);
+function createGame(): Game {
+  const saved = loadAutosave();
+  if (saved) {
+    try {
+      return new Game(saved);
+    } catch (err) {
+      console.warn("The autosaved level could not be loaded, so the example is shown instead.", err);
+    }
+  }
+  return new Game(firstMarbleRun);
+}
+const game = createGame();
 if (game.level.camera) camera.set(game.level.camera);
+
+const editor = new Editor(game, camera, canvas);
+new Palette($("#palette"), editor);
+new Inspector($("#inspector"), editor);
+attachViewControls(canvas, camera, (e) => !editor.enabled || e.button === 1 || e.button === 2);
+
+editor.events.on("change", (level) => {
+  autosave(level);
+  updateButtons();
+});
+
+function openLevel(level: LevelData): void {
+  editor.loadLevel(level);
+  if (level.camera) camera.set(level.camera);
+  updateButtons();
+}
+
+for (const [i, level] of builtinLevels.entries()) {
+  const option = document.createElement("option");
+  option.value = String(i);
+  option.textContent = level.name;
+  examples.append(option);
+}
+examples.addEventListener("change", () => {
+  const level = builtinLevels[Number(examples.value)];
+  examples.value = "";
+  if (level && confirmReplace()) openLevel(level);
+});
+
+$("#new").addEventListener("click", () => {
+  if (confirmReplace()) openLevel(blankLevel());
+});
+
+function confirmReplace(): boolean {
+  return editor.history.canUndo ? window.confirm("Replace the current level? Save it to a file first if you want to keep it.") : true;
+}
+
+// ---- Play / build ------------------------------------------------------------
 
 let finished = 0;
 let lastFinishTime: number | null = null;
@@ -26,39 +107,61 @@ game.events.on("finish", ({ time }) => {
   finished++;
   lastFinishTime = time;
 });
-game.events.on("load", ({ level }) => {
+game.events.on("load", () => {
   finished = 0;
   lastFinishTime = null;
-  if (level.camera) camera.set(level.camera);
 });
 
 function togglePlay(): void {
   if (game.running) game.pause();
-  else game.play();
+  else {
+    editor.setTool("select");
+    game.commit();
+    game.play();
+  }
+  updateButtons();
+}
+
+function stop(): void {
+  game.reset();
+  editor.select(editor.selected);
+  updateButtons();
 }
 
 function updateButtons(): void {
-  playButton.textContent = game.running ? "⏸ Pause" : "▶ Play";
+  playButton.textContent = game.running ? "⏸ Pause" : game.started ? "▶ Resume" : "▶ Play";
+  stopButton.disabled = !game.started;
+  undoButton.disabled = game.started || !editor.history.canUndo;
+  redoButton.disabled = game.started || !editor.history.canRedo;
+  document.body.classList.toggle("playing", game.started);
+  hint.textContent = game.started
+    ? "Playing · drag to pan · scroll to zoom · Space pauses · R stops and goes back to building"
+    : "Building · pick a tool on the left · Q/E rotate · Del deletes · Ctrl+Z undoes · G toggles snap · right-drag pans · Space plays";
 }
-game.events.on("play", updateButtons);
-game.events.on("pause", updateButtons);
-game.events.on("load", updateButtons);
 
 playButton.addEventListener("click", togglePlay);
-resetButton.addEventListener("click", () => game.reset());
+stopButton.addEventListener("click", stop);
+undoButton.addEventListener("click", () => editor.undo());
+redoButton.addEventListener("click", () => editor.redo());
 
 window.addEventListener("keydown", (e) => {
-  if (e.target instanceof HTMLInputElement) return;
+  const t = e.target;
+  if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement) return;
   if (e.code === "Space") {
     e.preventDefault();
     togglePlay();
-  } else if (e.code === "KeyR") {
-    game.reset();
+  } else if (e.code === "KeyR" && !e.ctrlKey && !e.metaKey && game.started) {
+    stop();
+  } else if (editor.handleKey(e)) {
+    e.preventDefault();
   }
 });
 
-exportButton.addEventListener("click", () => {
-  const level = game.serialize(camera.toData());
+// ---- Files -------------------------------------------------------------------
+
+$("#export").addEventListener("click", () => {
+  game.commit();
+  const level = { ...game.level, camera: camera.toData() };
   const blob = new Blob([JSON.stringify(level, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -69,31 +172,37 @@ exportButton.addEventListener("click", () => {
 
 importInput.addEventListener("change", async () => {
   const file = importInput.files?.[0];
+  importInput.value = "";
   if (!file) return;
   try {
     const level = JSON.parse(await file.text()) as LevelData;
     if (level.format !== "tinkerlab/level") throw new Error("This is not a TinkerLab level file.");
-    game.load(level);
+    if (game.started) stop();
+    openLevel(level);
   } catch (err) {
     console.error(err);
-    hud.textContent = `Could not open that file: ${(err as Error).message}`;
+    window.alert(`Could not open that file: ${(err as Error).message}`);
   }
-  importInput.value = "";
 });
 
-attachViewControls(canvas, camera);
+// ---- Loop --------------------------------------------------------------------
 
 const resize = () => renderer.resize();
 window.addEventListener("resize", resize);
 resize();
+updateButtons();
 
 let last = performance.now();
 function frame(now: number): void {
   game.tick((now - last) / 1000);
   last = now;
-  renderer.render(game);
-  const timeText = lastFinishTime === null ? "" : ` · last at ${lastFinishTime.toFixed(1)}s`;
-  hud.textContent = `${game.level.name} · ${game.time.toFixed(1)}s · finished ${finished}${timeText}`;
+  renderer.render(game, (r) => editor.drawOverlay(r));
+  if (game.started) {
+    const timeText = lastFinishTime === null ? "" : ` · last at ${lastFinishTime.toFixed(1)}s`;
+    hud.textContent = `${game.level.name} · ${game.time.toFixed(1)}s · finished ${finished}${timeText}`;
+  } else {
+    hud.textContent = `${game.level.name} · building`;
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

@@ -36,6 +36,7 @@ const ball: ActorDef = {
   type: "ball",
   label: "Ball",
   category: "Shapes",
+  icon: "●",
   description: "A round object. Leave it moving for marbles, fix it in place for pegs.",
   props: [
     { key: "radius", label: "Radius", kind: "number", default: 0.25, min: 0.05, max: 10, step: 0.05 },

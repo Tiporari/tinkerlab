@@ -45,6 +45,9 @@ export class Game {
     this.world = new World({ gravity: Vec2(level.gravity[0], level.gravity[1]) });
     this.world.on("begin-contact", (c) => this.handleContact(c));
     for (const data of level.actors) this.add(data);
+    // Store it back with every id and default filled in, so undo, reset and
+    // saving all refer to the same actors.
+    this.level = this.serialize();
     this.events.emit("load", { level: this.level });
   }
 
@@ -77,6 +80,35 @@ export class Game {
     actor.build();
     this.actors.push(actor);
     return actor;
+  }
+
+  /**
+   * Rebuild an actor from new data, keeping its place in the list and its id.
+   * The editor uses this whenever a setting changes.
+   */
+  replace(actor: Actor, data: ActorData): Actor {
+    const index = this.actors.indexOf(actor);
+    if (index < 0) throw new Error(`Actor ${actor.id} is not in this game`);
+    actor.destroy();
+    const next = getActorDef(data.type).create(this, { ...data, id: actor.id });
+    next.build();
+    this.actors[index] = next;
+    return next;
+  }
+
+  /** Remove an actor right away. Only safe outside of a physics step. */
+  removeNow(actor: Actor): void {
+    actor.destroy();
+    this.actors = this.actors.filter((a) => a !== actor);
+  }
+
+  /**
+   * Make the current actors the level's saved state, so reset returns here.
+   * The editor calls this after every change. Ignored once play has started.
+   */
+  commit(): void {
+    if (this.started) return;
+    this.level = this.serialize();
   }
 
   /** Add an actor that exists only while playing. */
@@ -133,10 +165,7 @@ export class Game {
 
   private flushRemovals(): void {
     if (this.pendingRemoval.size === 0) return;
-    for (const actor of this.pendingRemoval) {
-      actor.destroy();
-      this.actors = this.actors.filter((a) => a !== actor);
-    }
+    for (const actor of this.pendingRemoval) this.removeNow(actor);
     this.pendingRemoval.clear();
   }
 

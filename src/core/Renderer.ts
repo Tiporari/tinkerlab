@@ -28,7 +28,8 @@ export class Renderer {
     this.camera.height = rect.height;
   }
 
-  render(game: Game): void {
+  /** Draw a frame. `overlay` runs last, still in world coordinates (the editor uses it). */
+  render(game: Game, overlay?: (r: Renderer) => void): void {
     const { ctx, camera } = this;
     const dpr = this.canvas.width / Math.max(1, camera.width);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -40,6 +41,11 @@ export class Renderer {
     for (const actor of game.actors) {
       ctx.save();
       actor.draw(this);
+      ctx.restore();
+    }
+    if (overlay) {
+      ctx.save();
+      overlay(this);
       ctx.restore();
     }
   }

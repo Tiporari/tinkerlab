@@ -1,4 +1,4 @@
-import type { Body, Contact } from "planck";
+import { Vec2, type Body, type Contact } from "planck";
 import type { Game } from "./Game";
 import type { Renderer } from "./Renderer";
 import { getActorDef, resolveProps, type ActorDef } from "./registry";
@@ -65,6 +65,67 @@ export abstract class Actor<P extends Props = Props> {
     }
   }
 
+  /**
+   * Is the world point (x, y) on this actor? `tolerance` is in meters and
+   * makes thin shapes like paths easier to click. Used by the editor.
+   */
+  hitTest(x: number, y: number, tolerance = 0): boolean {
+    if (!this.body) return false;
+    const point = Vec2(x, y);
+    const local = this.body.getLocalPoint(point);
+    for (let f = this.body.getFixtureList(); f; f = f.getNext()) {
+      if (f.testPoint(point)) return true;
+      if (tolerance <= 0) continue;
+      const shape = f.getShape() as unknown as ShapeInternals;
+      switch (f.getShape().getType()) {
+        case "circle":
+          if (Math.hypot(local.x - shape.m_p!.x, local.y - shape.m_p!.y) <= shape.m_radius + tolerance) return true;
+          break;
+        case "edge":
+          if (distanceToSegment(local, shape.m_vertex1!, shape.m_vertex2!) <= tolerance) return true;
+          break;
+        case "polygon":
+        case "chain": {
+          const v = shape.m_vertices!;
+          const closed = f.getShape().getType() === "polygon";
+          for (let i = 0; i < v.length - (closed ? 0 : 1); i++) {
+            if (distanceToSegment(local, v[i], v[(i + 1) % v.length]) <= tolerance) return true;
+          }
+          break;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** World-space box around the actor, for the editor's selection outline. */
+  getBounds(): Bounds | null {
+    if (!this.body) return null;
+    let bounds: Bounds | null = null;
+    for (let f = this.body.getFixtureList(); f; f = f.getNext()) {
+      const childCount = f.getShape().getChildCount();
+      for (let i = 0; i < childCount; i++) {
+        const aabb = f.getAABB(i);
+        bounds = unionBounds(bounds, {
+          minX: aabb.lowerBound.x,
+          minY: aabb.lowerBound.y,
+          maxX: aabb.upperBound.x,
+          maxY: aabb.upperBound.y,
+        });
+      }
+    }
+    return bounds;
+  }
+
+  /** Move to a new spot without rebuilding. Used while dragging in the editor. */
+  setPose(x: number, y: number, angle = this.angle): void {
+    this.x = x;
+    this.y = y;
+    this.angle = angle;
+    this.body?.setTransform(Vec2(x, y), angle);
+    this.body?.setAwake(true);
+  }
+
   serialize(): ActorData {
     return {
       id: this.id,
@@ -81,6 +142,46 @@ export abstract class Actor<P extends Props = Props> {
     body.setUserData(this);
     return body;
   }
+}
+
+export interface Bounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+export function unionBounds(a: Bounds | null, b: Bounds): Bounds {
+  if (!a) return { ...b };
+  return {
+    minX: Math.min(a.minX, b.minX),
+    minY: Math.min(a.minY, b.minY),
+    maxX: Math.max(a.maxX, b.maxX),
+    maxY: Math.max(a.maxY, b.maxY),
+  };
+}
+
+type Point = { x: number; y: number };
+
+/** Planck keeps shape geometry in these fields; the public API has no getters for them. */
+interface ShapeInternals {
+  m_radius: number;
+  m_p?: Point;
+  m_vertex1?: Point;
+  m_vertex2?: Point;
+  m_vertices?: Point[];
+}
+
+function distanceToSegment(
+  p: { x: number; y: number },
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
 
 /** Ensure ids generated later never collide with ids loaded from a file. */

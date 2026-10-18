@@ -14,9 +14,22 @@ export interface ActorDef {
   /** Groups actors in the editor palette, e.g. "Shapes" or "Course". */
   category: string;
   description?: string;
+  /** A short symbol or emoji for the editor palette. */
+  icon?: string;
+  /**
+   * How the editor creates one:
+   * - "click" (default): click to drop it where you click
+   * - "drag-line": drag from one end to the other; sets `width` and `angle` (ramps, walls)
+   * - "draw-path": draw freehand; sets `points` (curves, funnels)
+   */
+  placement?: Placement;
+  /** Set false to hide it from the editor palette. */
+  palette?: boolean;
   props: PropField[];
   create(game: Game, data: ActorData): Actor;
 }
+
+export type Placement = "click" | "drag-line" | "draw-path";
 
 const defs = new Map<string, ActorDef>();
 
