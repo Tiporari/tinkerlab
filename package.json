@@ -1,0 +1,22 @@
+{
+  "name": "tinkerlab",
+  "version": "0.1.0",
+  "description": "A browser-based 2D physics sandbox for building marble runs, machines and contraptions.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "planck": "^1.5.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}

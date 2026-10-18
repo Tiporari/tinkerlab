@@ -1,0 +1,29 @@
+{
+  "format": "tinkerlab/level",
+  "version": 1,
+  "name": "First marble run",
+  "gravity": [0, -10],
+  "camera": { "x": 0, "y": 4, "zoom": 40 },
+  "actors": [
+    { "id": "start-1", "type": "start", "x": -6.5, "y": 9.5, "props": { "count": 4, "interval": 1.2 } },
+
+    { "id": "ramp-1", "type": "block", "x": -2, "y": 7, "angle": -0.15, "props": { "width": 10 } },
+    { "id": "wall-right", "type": "block", "x": 5, "y": 6, "props": { "width": 0.3, "height": 4 } },
+
+    { "id": "ramp-2", "type": "block", "x": 0.5, "y": 4, "angle": 0.15, "props": { "width": 10 } },
+    { "id": "peg-1", "type": "ball", "x": 1, "y": 5.1, "props": { "dynamic": false, "radius": 0.15, "color": "#64748b" } },
+    { "id": "wall-left", "type": "block", "x": -6, "y": 3, "props": { "width": 0.3, "height": 4 } },
+
+    { "id": "ramp-3", "type": "block", "x": -1, "y": 1.2, "angle": -0.12, "props": { "width": 10 } },
+    { "id": "domino-1", "type": "block", "x": 5.9, "y": -0.69, "props": { "width": 0.2, "height": 1, "dynamic": true, "color": "#c2410c" } },
+
+    {
+      "id": "funnel",
+      "type": "path",
+      "x": 0,
+      "y": 0,
+      "props": { "points": [[3.4, 0.4], [5.5, -1.2], [7.8, -1.2], [8.6, 2]] }
+    },
+    { "id": "finish-1", "type": "finish", "x": 6.65, "y": -0.4, "props": { "width": 2, "height": 1.4 } }
+  ]
+}

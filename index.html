@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TinkerLab</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <strong class="brand">TinkerLab</strong>
+      <button id="play" title="Play / pause (Space)">▶ Play</button>
+      <button id="reset" title="Reset (R)">↺ Reset</button>
+      <span class="spacer"></span>
+      <button id="export" title="Save the level as a JSON file">Save level</button>
+      <label class="button" title="Open a level JSON file">
+        Open level<input id="import" type="file" accept=".json,application/json" hidden />
+      </label>
+    </header>
+    <main>
+      <canvas id="view"></canvas>
+      <div id="hud" class="hud"></div>
+      <div class="hint">Drag to pan · scroll or pinch to zoom · Space plays · R resets</div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
