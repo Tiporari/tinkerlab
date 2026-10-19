@@ -68,9 +68,10 @@ describe("editor", () => {
 
   it("selects and moves things, with undo and redo", () => {
     const finish = game.actors.find((a) => a.type === "finish")!;
-    pointer(canvas, "pointerdown", ...toScreen(finish.x, finish.y));
-    pointer(canvas, "pointermove", ...toScreen(finish.x - 3, finish.y + 2));
-    pointer(canvas, "pointerup", ...toScreen(finish.x - 3, finish.y + 2));
+    const { x, y } = finish;
+    pointer(canvas, "pointerdown", ...toScreen(x, y));
+    pointer(canvas, "pointermove", ...toScreen(x - 3, y + 2));
+    pointer(canvas, "pointerup", ...toScreen(x - 3, y + 2));
     expect(editor.selected?.id).toBe(finish.id);
     expect(editor.selected!.x).toBeCloseTo(5);
     expect(editor.selected!.y).toBeCloseTo(2);
@@ -108,12 +109,38 @@ describe("editor", () => {
 
 describe("every actor type", () => {
   for (const def of listActorDefs()) {
-    it(`${def.type} can be placed from its defaults and clicked on`, () => {
+    it(`${def.type} can be placed from its defaults, clicked on and played`, () => {
       const game = new Game({ ...blankLevel(), actors: [] });
-      const actor = game.add({ type: def.type, x: 1, y: 2 });
-      for (const field of def.props) expect(actor.props[field.key]).toEqual(field.default);
+      // Parts that attach to something get a block to hang off, anchored at its centre.
+      const attaches = ["connect", "pin", "attach"].includes(def.placement ?? "click");
+      const host = attaches ? game.add({ type: "block", x: 1, y: 2, props: { dynamic: true, width: 1, height: 1 } }) : null;
+      const actor = game.add({
+        type: def.type,
+        x: 1,
+        y: 2,
+        props: host ? { a: host.id, ax: 0, ay: 0, bx: 3, by: 2 } : {},
+      });
+      for (const field of def.props) {
+        if (!field.hidden) expect(actor.props[field.key]).toEqual(field.default);
+      }
       expect(actor.hitTest(1, 2, 0.1)).toBe(true);
       expect(actor.getBounds()).not.toBeNull();
+
+      game.input.press("ArrowUp");
+      game.input.press("ArrowRight");
+      game.play();
+      for (let i = 0; i < 60; i++) game.step();
+      for (const a of game.actors) {
+        const p = a.body?.getPosition();
+        if (p) expect(Number.isFinite(p.x) && Number.isFinite(p.y)).toBe(true);
+      }
+
+      // Removing the host takes its parts with it.
+      if (host) {
+        game.reset();
+        game.removeNow(game.find(host.id)!);
+        expect(game.actors).toHaveLength(0);
+      }
     });
   }
 });

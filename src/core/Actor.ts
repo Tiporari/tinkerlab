@@ -36,6 +36,12 @@ export abstract class Actor<P extends Props = Props> {
     this.y = data.y;
     this.angle = data.angle ?? 0;
     this.props = resolveProps(this.def, data.props) as P;
+    for (const tag of data.tags ?? []) this.tags.add(tag);
+  }
+
+  /** Ids of other actors this one is attached to. They are rebuilt or removed together. */
+  dependsOn(): string[] {
+    return [];
   }
 
   /** Create physics bodies, fixtures and joints. Called once when added. */
@@ -127,7 +133,7 @@ export abstract class Actor<P extends Props = Props> {
   }
 
   serialize(): ActorData {
-    return {
+    const data: ActorData = {
       id: this.id,
       type: this.type,
       x: this.x,
@@ -135,6 +141,13 @@ export abstract class Actor<P extends Props = Props> {
       angle: this.angle,
       props: structuredClone(this.props),
     };
+    if (this.savedTags.length) data.tags = [...this.savedTags];
+    return data;
+  }
+
+  /** Tags that belong in the level file. Runtime tags like "marble" on spawned marbles are left out. */
+  get savedTags(): string[] {
+    return this.transient ? [] : [...this.tags];
   }
 
   /** Attach this actor to a body so contacts can find their way back to it. */

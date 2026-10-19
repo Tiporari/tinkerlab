@@ -1,4 +1,5 @@
 import type { Actor } from "../core/Actor";
+import { CONTROL_PRESETS } from "../core/input";
 import type { PropField, PropValue } from "../core/types";
 import type { Editor } from "./Editor";
 import { tidy } from "./geometry";
@@ -36,20 +37,40 @@ export class Inspector {
     const def = actor.def;
     panel.append(heading(`${def.icon ?? ""} ${def.label}`.trim(), def.description));
 
-    panel.append(
-      this.numberRow("X", actor.x, { step: 0.05 }, (v, rec) => this.editor.updateSelected((d) => (d.x = v), rec)),
-      this.numberRow("Y", actor.y, { step: 0.05 }, (v, rec) => this.editor.updateSelected((d) => (d.y = v), rec)),
-      this.numberRow(
-        "Angle°",
-        tidy(actor.angle / DEG, 1),
-        { min: -360, max: 360, step: 1, slider: true },
-        (v, rec) => this.editor.updateSelected((d) => (d.angle = tidy(v * DEG, 4)), rec),
-      ),
-    );
+    const pose = def.poseFields ?? ["x", "y", "angle"];
+    if (pose.includes("x")) {
+      panel.append(this.numberRow("X", actor.x, { step: 0.05 }, (v, rec) => this.editor.updateSelected((d) => (d.x = v), rec)));
+    }
+    if (pose.includes("y")) {
+      panel.append(this.numberRow("Y", actor.y, { step: 0.05 }, (v, rec) => this.editor.updateSelected((d) => (d.y = v), rec)));
+    }
+    if (pose.includes("angle")) {
+      panel.append(
+        this.numberRow(
+          "Angle°",
+          tidy(actor.angle / DEG, 1),
+          { min: -360, max: 360, step: 1, slider: true },
+          (v, rec) => this.editor.updateSelected((d) => (d.angle = tidy(v * DEG, 4)), rec),
+        ),
+      );
+    }
 
     for (const field of def.props) {
-      panel.append(this.fieldRow(field, actor.props[field.key]));
+      if (!field.hidden) panel.append(this.fieldRow(field, actor.props[field.key]));
     }
+
+    const tags = document.createElement("input");
+    tags.type = "text";
+    tags.placeholder = "e.g. player";
+    tags.value = actor.savedTags.join(", ");
+    tags.addEventListener("change", () =>
+      this.editor.updateSelected((d) => {
+        const list = tags.value.split(",").map((t) => t.trim()).filter(Boolean);
+        if (list.length) d.tags = list;
+        else delete d.tags;
+      }),
+    );
+    panel.append(row("Tags", tags, 'Labels other things look for. Tag a vehicle "player" and the camera follows it while playing.'));
 
     const actions = document.createElement("div");
     actions.className = "inspector-actions";
@@ -126,6 +147,21 @@ export class Inspector {
         input.value = String(value);
         input.addEventListener("change", () => set(input.value));
         return row(field.label, input, field.help);
+      }
+      case "control": {
+        const select = document.createElement("select");
+        const presets = CONTROL_PRESETS.some((p) => p.value === value)
+          ? CONTROL_PRESETS
+          : [...CONTROL_PRESETS, { value: String(value), label: String(value) }];
+        for (const preset of presets) {
+          const option = document.createElement("option");
+          option.value = preset.value;
+          option.textContent = preset.label;
+          option.selected = preset.value === value;
+          select.append(option);
+        }
+        select.addEventListener("change", () => set(select.value));
+        return row(field.label, select, field.help ?? "What drives it while playing.");
       }
       case "points": {
         const info = document.createElement("span");

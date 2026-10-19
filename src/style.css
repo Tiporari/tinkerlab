@@ -81,3 +81,17 @@ body.playing .palette, body.playing .inspector { opacity: 0.45; pointer-events: 
   main { min-height: 50vh; }
   .inspector { width: auto; max-height: 35vh; border-left: 0; border-top: 1px solid var(--line); }
 }
+
+.inspector-row select { width: 100%; font: inherit; font-size: 13px; padding: 4px; }
+.controls {
+  position: absolute; right: 12px; bottom: 32px; max-width: 280px;
+  padding: 8px 10px; border-radius: 6px; background: rgba(255,255,255,0.9);
+  font-size: 13px; display: flex; flex-direction: column; gap: 6px;
+}
+.controls[hidden] { display: none; }
+.controls label { display: flex; flex-direction: column; gap: 2px; }
+kbd {
+  display: inline-block; min-width: 1.6em; padding: 1px 6px; text-align: center;
+  border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; background: #fff;
+  font: 600 12px system-ui, sans-serif;
+}

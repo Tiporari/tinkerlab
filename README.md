@@ -42,6 +42,27 @@ The game has two modes. In **build** mode you edit the level; press **Play**
 | Pan | drag empty space, or right/middle-drag; two fingers on touch |
 | Zoom | scroll wheel or pinch |
 
+### Machine parts
+
+| Part | How to place it | What it does |
+| --- | --- | --- |
+| **Wheel** | click on something | a wheel on an axle; drive it with ← / → by default |
+| **Hinge** | click where two things overlap (or on one thing, to pin it to the world) | lets them turn around that point; give it a control to make it a motor |
+| **Spring** | drag from one thing to another, or to empty space | pushes back when squashed or stretched |
+| **Rope** | drag between two things | a hanging, swinging rope as long as you drew it |
+| **Piston** | drag between two things | grows and shrinks while its keys are held (↓ / ↑ by default), holds when let go |
+| **Muscle** | drag between two things | pulls its ends together while its key is held (J by default) |
+| **Thruster** | click on something, then turn it with Q / E | pushes the way it points while its key is held (↑ by default) |
+
+Every active part has a **Control** setting: a key, a pair of keys, "always on",
+or an on-screen slider. While playing, a panel in the corner lists which keys do
+what and shows any sliders. Parts follow whatever they're attached to: drag a
+cart's body and its wheels come with it, delete it and they go too.
+
+Tag something `player` (in its settings panel) and the camera follows it
+while playing. A finish counts things with the tag in its **Counts tag**
+setting: `marble` by default, or `player` for a vehicle.
+
 Your work is autosaved in the browser. **Save file** downloads the level as
 JSON and **Open file** loads one, so you can keep and share levels.
 
@@ -55,8 +76,11 @@ src/
     registry.ts  the list of actor types the game knows about
     Renderer.ts  draws to a canvas in world units (meters, y up)
     Camera.ts    pan, zoom and rotation
+    Connector.ts base class for parts attached to other actors
+    input.ts     keys and sliders, and the control strings parts use
   editor/      build mode: tools, palette, settings panel, undo
-  actors/      one file per kind of object (ball, block, path, start, finish)
+  actors/      one file per kind of object: shapes, course pieces and machine parts
+  ui/          the play-mode controls panel
   levels/      built-in levels as JSON
 tests/         headless tests that run levels without a browser
 ```
@@ -133,6 +157,22 @@ Actors can also override these hooks:
 Actors talk to each other through `game.events`, for example
 `game.events.on("finish", ...)`.
 
+### Parts that attach to other things
+
+Extend `Connector` instead of `Actor` (see `src/actors/spring.ts` for a short
+one). Spread `connectorFields()` into `props`: they store which actors it joins
+(`a` and `b`, or `""` for the world) and the anchor points in each one's own
+frame. Use `this.bodyA`, `this.bodyB`, `this.worldA()` and `this.worldB()` in
+`build()`, and create joints with `this.addJoint(...)` so they're cleaned up.
+Set `layer: 2` (or `1` if other parts can attach to it, like a wheel) so it's
+built after the things it joins, and pick a `placement` of `"connect"`,
+`"pin"` or `"attach"`.
+
+For something the player drives, add `controlField("keys:ArrowLeft,ArrowRight")`
+to `props` and read it in `update()` with `this.game.input.axis(this.props.control)`,
+which gives a number from -1 to 1. Control strings are described in
+`src/core/input.ts`.
+
 ## Level files
 
 ```json
@@ -157,7 +197,7 @@ actor type's default.
 
 1. **Core framework and a marble run** (done)
 2. **Basic editor**: draw and drag objects, edit their settings, build and play modes (done)
-3. **Machine parts and controls**: springs, ropes, motor wheels, pistons, muscles, thrusters, keyboard and slider controls
+3. **Machine parts and controls**: springs, ropes, motor wheels, pistons, muscles, thrusters, keyboard and slider controls (done)
 4. **Images, scripting and bigger worlds**: image import with masking, large scrolling levels, script nodes
 
 ## License

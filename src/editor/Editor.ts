@@ -1,5 +1,6 @@
 import type { Actor } from "../core/Actor";
 import type { Camera } from "../core/Camera";
+import { Connector } from "../core/Connector";
 import { EventBus } from "../core/events";
 import type { Game } from "../core/Game";
 import type { Renderer } from "../core/Renderer";
@@ -25,6 +26,7 @@ type Gesture =
   | { kind: "pan"; last: Pt }
   | { kind: "click"; at: Pt }
   | { kind: "line"; a: Pt; b: Pt }
+  | { kind: "connect"; a: Pt; b: Pt }
   | { kind: "path"; points: Pt[] };
 
 const DEG = Math.PI / 180;
@@ -141,12 +143,14 @@ export class Editor {
   }
 
   rotateSelected(delta: number): void {
+    if (!this.canTurn(this.selected)) return;
     this.updateSelected((d) => {
       d.angle = tidy((d.angle ?? 0) + delta, 4);
     });
   }
 
   nudgeSelected(dx: number, dy: number): void {
+    if (!this.canMove(this.selected)) return;
     this.updateSelected((d) => {
       d.x = tidy(d.x + dx);
       d.y = tidy(d.y + dy);
@@ -259,7 +263,24 @@ export class Editor {
     return null;
   }
 
+  /** The topmost things with a physics body under a point, for attaching parts to. */
+  bodiesAt(p: Pt): Actor[] {
+    const tolerance = HIT_PIXELS / this.camera.zoom;
+    return this.game.actors
+      .filter((a) => a.body && !a.transient && a.hitTest(p.x, p.y, tolerance))
+      .reverse();
+  }
+
+  canMove(actor: Actor | null): boolean {
+    return !!actor && (actor.def.poseFields ?? ["x", "y", "angle"]).includes("x");
+  }
+
+  canTurn(actor: Actor | null): boolean {
+    return !!actor && (actor.def.poseFields ?? ["x", "y", "angle"]).includes("angle");
+  }
+
   private handlePosition(actor: Actor): Pt | null {
+    if (!this.canTurn(actor)) return null;
     const b = actor.getBounds();
     if (!b) return null;
     return { x: actor.x, y: b.maxY + HANDLE_PIXELS / this.camera.zoom };
@@ -287,7 +308,9 @@ export class Editor {
       const hit = this.actorAt(p);
       if (hit) {
         this.select(hit);
-        this.gesture = { kind: "move", id: hit.id, start: p, orig: { x: hit.x, y: hit.y }, moved: false };
+        this.gesture = this.canMove(hit)
+          ? { kind: "move", id: hit.id, start: p, orig: { x: hit.x, y: hit.y }, moved: false }
+          : null;
       } else {
         this.select(null);
         this.gesture = { kind: "pan", last: this.screen(e) };
@@ -308,6 +331,15 @@ export class Editor {
       case "draw-path":
         this.gesture = { kind: "path", points: [p] };
         break;
+      case "connect": {
+        const a = this.bodiesAt(p).length ? p : this.snapPt(p);
+        this.gesture = { kind: "connect", a, b: a };
+        break;
+      }
+      case "pin":
+      case "attach":
+        this.gesture = { kind: "click", at: this.bodiesAt(p).length ? p : this.snapPt(p) };
+        break;
     }
   }
 
@@ -323,6 +355,7 @@ export class Editor {
         if (target.x !== actor.x || target.y !== actor.y) {
           g.moved = true;
           actor.setPose(target.x, target.y);
+          this.game.rebuildDependents(actor);
         }
         break;
       }
@@ -330,8 +363,11 @@ export class Editor {
         const actor = this.game.find(g.id);
         if (!actor) return;
         let angle = Math.atan2(p.y - actor.y, p.x - actor.x) - Math.PI / 2;
+        // A part's angle is measured on the thing it's attached to.
+        if (actor instanceof Connector) angle -= actor.bodyA.getAngle();
         if (this.snapOn && !e.shiftKey) angle = Math.round(angle / (15 * DEG)) * 15 * DEG;
         actor.setPose(actor.x, actor.y, tidy(angle, 4));
+        this.game.rebuildDependents(actor);
         break;
       }
       case "pan": {
@@ -342,6 +378,9 @@ export class Editor {
       }
       case "line":
         g.b = this.snapPt(p);
+        break;
+      case "connect":
+        g.b = this.bodiesAt(p).length ? p : this.snapPt(p);
         break;
       case "path": {
         const last = g.points[g.points.length - 1];
@@ -355,6 +394,8 @@ export class Editor {
 
   private onPointerUp(e: PointerEvent): void {
     if (e.pointerId !== this.pointerId) return;
+    // The release point counts too, in case it moved since the last move event.
+    this.onPointerMove(e);
     const g = this.gesture;
     this.gesture = null;
     this.pointerId = null;
@@ -366,8 +407,15 @@ export class Editor {
       case "rotate":
         this.commitPose(g.id);
         break;
-      case "click":
-        this.create({ type: this.placingType(), x: g.at.x, y: g.at.y });
+      case "click": {
+        const placement = getActorDef(this.placingType()).placement ?? "click";
+        if (placement === "pin") this.finishPin(g.at);
+        else if (placement === "attach") this.finishAttach(g.at);
+        else this.create({ type: this.placingType(), x: g.at.x, y: g.at.y });
+        break;
+      }
+      case "connect":
+        this.finishConnect(g.a, g.b);
         break;
       case "line":
         this.finishLine(g.a, g.b);
@@ -417,6 +465,55 @@ export class Editor {
     });
   }
 
+  /** Where a world point sits on an actor's body, or the point itself for the world. */
+  private anchorOn(actor: Actor | undefined, p: Pt): Pt {
+    if (!actor?.body) return { x: tidy(p.x), y: tidy(p.y) };
+    const local = actor.body.getLocalPoint(p);
+    return { x: tidy(local.x), y: tidy(local.y) };
+  }
+
+  /** Join whatever is under each end of the drag (or the world) with a connector. */
+  private finishConnect(a: Pt, b: Pt): void {
+    if (Math.hypot(b.x - a.x, b.y - a.y) < 0.1) return;
+    const targetA = this.bodiesAt(a)[0];
+    const targetB = this.bodiesAt(b).find((t) => t !== targetA);
+    if (!targetA && !targetB) return; // two points on the world would do nothing
+    const anchorA = this.anchorOn(targetA, a);
+    const anchorB = this.anchorOn(targetB, b);
+    this.create({
+      type: this.placingType(),
+      x: tidy(a.x),
+      y: tidy(a.y),
+      props: { a: targetA?.id ?? "", b: targetB?.id ?? "", ax: anchorA.x, ay: anchorA.y, bx: anchorB.x, by: anchorB.y },
+    });
+  }
+
+  /** Pin the top two things under the point together (or the top one to the world). */
+  private finishPin(p: Pt): void {
+    const [top, below] = this.bodiesAt(p);
+    if (!top) return;
+    const anchorA = this.anchorOn(top, p);
+    const anchorB = this.anchorOn(below, p);
+    this.create({
+      type: this.placingType(),
+      x: tidy(p.x),
+      y: tidy(p.y),
+      props: { a: top.id, b: below?.id ?? "", ax: anchorA.x, ay: anchorA.y, bx: anchorB.x, by: anchorB.y },
+    });
+  }
+
+  /** Bolt a part onto the top thing under the point, or onto the world. */
+  private finishAttach(p: Pt): void {
+    const target = this.bodiesAt(p)[0];
+    const anchor = this.anchorOn(target, p);
+    this.create({
+      type: this.placingType(),
+      x: tidy(p.x),
+      y: tidy(p.y),
+      props: { a: target?.id ?? "", ax: anchor.x, ay: anchor.y },
+    });
+  }
+
   private placingType(): string {
     return this.tool.slice("place:".length);
   }
@@ -429,6 +526,7 @@ export class Editor {
       if (actor) {
         if (g.kind === "move") actor.setPose(g.orig.x, g.orig.y);
         else actor.setPose(actor.x, actor.y, g.origAngle);
+        this.game.rebuildDependents(actor);
       }
     }
     this.gesture = null;
@@ -452,16 +550,18 @@ export class Editor {
         ctx.strokeStyle = "#2563eb";
         ctx.strokeRect(b.minX - pad, b.minY - pad, b.maxX - b.minX + 2 * pad, b.maxY - b.minY + 2 * pad);
         ctx.setLineDash([]);
-        const h = this.handlePosition(sel)!;
-        ctx.beginPath();
-        ctx.moveTo(sel.x, b.maxY + pad);
-        ctx.lineTo(h.x, h.y);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(h.x, h.y, 6 * px, 0, Math.PI * 2);
-        ctx.fillStyle = "#fff";
-        ctx.fill();
-        ctx.stroke();
+        const h = this.handlePosition(sel);
+        if (h) {
+          ctx.beginPath();
+          ctx.moveTo(h.x, b.maxY + pad);
+          ctx.lineTo(h.x, h.y);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(h.x, h.y, 6 * px, 0, Math.PI * 2);
+          ctx.fillStyle = "#fff";
+          ctx.fill();
+          ctx.stroke();
+        }
       }
     }
 
@@ -479,6 +579,22 @@ export class Editor {
       const length = Math.hypot(g.b.x - g.a.x, g.b.y - g.a.y);
       if (length > 0.2) {
         r.drawLabel(`${length.toFixed(2)} m`, (g.a.x + g.b.x) / 2, (g.a.y + g.b.y) / 2 + 18 * px, "#2563eb", 12);
+      }
+    } else if (g?.kind === "connect") {
+      ctx.setLineDash([6 * px, 4 * px]);
+      ctx.lineWidth = 2 * px;
+      ctx.strokeStyle = "#2563eb";
+      ctx.beginPath();
+      ctx.moveTo(g.a.x, g.a.y);
+      ctx.lineTo(g.b.x, g.b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      for (const end of [g.a, g.b]) {
+        ctx.beginPath();
+        ctx.arc(end.x, end.y, 4 * px, 0, Math.PI * 2);
+        ctx.fillStyle = this.bodiesAt(end).length ? "#2563eb" : "#fff";
+        ctx.fill();
+        ctx.stroke();
       }
     } else if (g?.kind === "path") {
       ctx.lineWidth = 4 * px;
