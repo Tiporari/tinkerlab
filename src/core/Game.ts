@@ -8,6 +8,8 @@ import type { ActorData, CameraData, LevelData } from "./types";
 export interface GameEvents extends Record<string, unknown> {
   /** A marble (or anything tagged "marble") reached a finish. */
   finish: { finish: Actor; actor: Actor; time: number };
+  /** Something touched a hazard and was removed or sent back to its start. */
+  hazard: { hazard: Actor; actor: Actor; result: "removed" | "respawned" };
   spawn: { actor: Actor };
   play: undefined;
   pause: undefined;
@@ -38,6 +40,7 @@ export class Game {
 
   private accumulator = 0;
   private pendingRemoval = new Set<Actor>();
+  private pendingRespawn = new Set<string>();
 
   constructor(level: LevelData) {
     this.load(level);
@@ -196,10 +199,19 @@ export class Game {
 
   /** Run exactly one fixed physics step. */
   step(): void {
-    for (const actor of this.actors) actor.update?.(STEP);
+    for (const actor of [...this.actors]) actor.update?.(STEP);
     this.world.step(STEP);
     this.time += STEP;
     this.flushRemovals();
+    this.flushRespawns();
+  }
+
+  /**
+   * Put an actor (and everything attached to it) back where the level starts
+   * it, standing still. Safe to call from inside contact callbacks.
+   */
+  respawn(actor: Actor): void {
+    this.pendingRespawn.add(actor.id);
   }
 
   /** The level as it should be saved: only non-transient actors. */
@@ -218,6 +230,16 @@ export class Game {
     b?.onContact?.(a, contact);
   }
 
+  private flushRespawns(): void {
+    if (this.pendingRespawn.size === 0) return;
+    for (const id of this.pendingRespawn) {
+      const actor = this.find(id);
+      const original = this.level.actors.find((a) => a.id === id);
+      if (actor && original) this.replace(actor, structuredClone(original));
+    }
+    this.pendingRespawn.clear();
+  }
+
   private flushRemovals(): void {
     if (this.pendingRemoval.size === 0) return;
     for (const actor of this.pendingRemoval) this.removeNow(actor);
@@ -228,6 +250,7 @@ export class Game {
     // The old world is simply dropped, which frees every body and joint in it.
     this.actors = [];
     this.pendingRemoval.clear();
+    this.pendingRespawn.clear();
     this.time = 0;
     this.accumulator = 0;
     this.running = false;
