@@ -55,7 +55,9 @@ export interface ActorDef {
 export interface ActorVariant {
   label: string;
   icon?: string;
-  props: Props;
+  props?: Props;
+  /** Placed turned by this much, in radians. */
+  angle?: number;
 }
 
 export interface ScaleSpec {

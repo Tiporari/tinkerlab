@@ -1,0 +1,22 @@
+{
+  "format": "tinkerlab/level",
+  "version": 1,
+  "name": "Which way is down?",
+  "gravity": [0, -10],
+  "camera": {"x": -4, "y": 3, "zoom": 32},
+  "actors": [
+    {"id": "start", "type": "start", "x": -8.2, "y": 3.2, "props": {"count": 5, "interval": 1.5}},
+    {"id": "ramp", "type": "block", "x": -6, "y": 1.5, "angle": -0.12, "props": {"width": 6.2}},
+    {"id": "back-wall", "type": "block", "x": -9.2, "y": 3, "props": {"width": 0.3, "height": 3}},
+    {"id": "lift", "type": "gravity-zone", "x": 0, "y": 4.3, "angle": 3.14159, "props": {"width": 6, "height": 7.6}},
+    {"id": "ceiling", "type": "block", "x": 0, "y": 8.4, "angle": 0.1, "props": {"width": 6.4}},
+    {"id": "catch-wall", "type": "block", "x": 7.6, "y": 3.5, "props": {"width": 0.3, "height": 8}},
+    {"id": "catch-floor", "type": "block", "x": 5.5, "y": -0.35, "props": {"width": 4.6}},
+    {"id": "finish", "type": "finish", "x": 5.5, "y": 0.4, "props": {"width": 4, "height": 1.2}},
+    {"id": "float", "type": "gravity-zone", "x": -15, "y": 4, "props": {"width": 6, "height": 6, "strength": 0}},
+    {"id": "float-box-1", "type": "block", "x": -16.2, "y": 5, "angle": 0.4, "props": {"width": 0.8, "height": 0.8, "dynamic": true, "color": "#f59e0b"}},
+    {"id": "float-box-2", "type": "block", "x": -14, "y": 3.2, "angle": -0.3, "props": {"width": 1.2, "height": 0.5, "dynamic": true, "color": "#10b981"}},
+    {"id": "float-ball", "type": "ball", "x": -14.5, "y": 5.6, "props": {"radius": 0.4, "color": "#ec4899"}},
+    {"id": "ground", "type": "block", "x": -4, "y": -6.5, "props": {"width": 30, "height": 1, "color": "#94a3b8"}}
+  ]
+}

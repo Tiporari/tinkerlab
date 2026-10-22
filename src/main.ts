@@ -3,6 +3,7 @@ import { Camera } from "./core/Camera";
 import { Game } from "./core/Game";
 import { Group } from "./core/Group";
 import { Renderer } from "./core/Renderer";
+import { viewRotationFor } from "./core/gravity";
 import { attachViewControls } from "./core/viewControls";
 import type { LevelData } from "./core/types";
 import { Editor } from "./editor/Editor";
@@ -144,6 +145,8 @@ function stop(): void {
   game.input.clear();
   controlPanel.hide();
   game.reset();
+  // Building is always done the right way up.
+  camera.rotation = 0;
   editor.select(editor.selected);
   updateButtons();
 }
@@ -238,9 +241,22 @@ function followPlayer(dt: number): void {
   const player = tagged instanceof Group ? [tagged, ...tagged.descendants()].find((a) => a.body) : tagged;
   if (!player?.body) return;
   const p = player.body.getPosition();
+  // Look a little "above" it, whichever way up is.
+  const g = game.gravityAt(p.x, p.y);
+  const n = Math.hypot(g.x, g.y) || 1;
   const ease = 1 - Math.exp(-dt * 4);
-  camera.x += (p.x - camera.x) * ease;
-  camera.y += (p.y + 1 - camera.y) * ease;
+  camera.x += (p.x - (g.x / n) * 1 - camera.x) * ease;
+  camera.y += (p.y - (g.y / n) * 1 - camera.y) * ease;
+}
+
+/** With "Turn view" on, slowly turn the view so the gravity in the middle of the screen points down. */
+function turnView(dt: number): void {
+  if (!game.level.turnView) return;
+  const g = game.gravityAt(camera.x, camera.y);
+  if (Math.hypot(g.x, g.y) < 0.5) return; // Floating: keep the view as it is.
+  let delta = viewRotationFor(g) - camera.rotation;
+  delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+  camera.rotation += delta * (1 - Math.exp(-dt * 3));
 }
 
 // ---- Loop --------------------------------------------------------------------
@@ -255,7 +271,10 @@ function frame(now: number): void {
   const dt = (now - last) / 1000;
   game.tick(dt);
   last = now;
-  if (game.started) followPlayer(dt);
+  if (game.started) {
+    followPlayer(dt);
+    turnView(dt);
+  }
   renderer.render(game, (r) => editor.drawOverlay(r));
   if (game.started) {
     const timeText = lastFinishTime === null ? "" : ` · last at ${lastFinishTime.toFixed(1)}s`;

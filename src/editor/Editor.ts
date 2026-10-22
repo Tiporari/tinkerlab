@@ -1148,8 +1148,13 @@ export class Editor {
   /** Create an actor from the current tool, with the palette preset's settings if there is one. */
   private place(data: ActorData): Actor {
     const variant = Number(this.tool.split("~")[1]);
-    const preset = Number.isInteger(variant) ? getActorDef(data.type).variants?.[variant]?.props : undefined;
-    return this.create(preset ? { ...data, props: { ...preset, ...data.props } } : data);
+    const preset = Number.isInteger(variant) ? getActorDef(data.type).variants?.[variant] : undefined;
+    if (!preset) return this.create(data);
+    return this.create({
+      ...data,
+      angle: data.angle ?? preset.angle,
+      props: { ...preset.props, ...data.props },
+    });
   }
 
   private cancelGesture(): void {

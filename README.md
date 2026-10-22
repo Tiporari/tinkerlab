@@ -74,6 +74,23 @@ where they started, with their wheels and parts, and marbles are destroyed. Its
 settings change which tags it sends back or destroys, or let it destroy
 anything that moves.
 
+### Gravity
+
+With nothing selected, the settings panel shows the level's own settings.
+**Gravity** sets how hard things fall (10 is like Earth, 0 floats) and
+**Down is°** sets which way: 0 is down, 90 is to the right, 180 is up.
+
+| Thing | What it does |
+| --- | --- |
+| **Gravity zone** | an area with its own gravity, pulling the way its arrows point; turn it to change which way is down. The **Upside down** and **No gravity** presets are ready-made ones |
+| **Planet** | pulls everything within its reach toward its middle, so things can stand on it from any side. **Pusher** is one with negative strength that pushes things away |
+
+Tick **Turn view** in the level settings and, while playing, the view slowly
+turns so down is always down the screen, even around a planet. Gyros follow
+gravity too: an angle gyro keeps a rocket upright compared with the planet
+under it, and a position gyro's "up and down" is along gravity. Try the
+**Which way is down?** and **Little planet** examples.
+
 Every active part has a **Control** setting: a key, a pair of keys, "always on",
 or an on-screen slider. While playing, a panel in the corner lists which keys do
 what and shows any sliders. Parts follow whatever they're attached to: drag a
@@ -120,6 +137,7 @@ src/
     Camera.ts    pan, zoom and rotation
     Connector.ts base class for parts attached to other actors
     Group.ts     base class for assemblies and welds, which hold other actors
+    gravity.ts   gravity directions and the hook gravity zones use
     input.ts     keys and sliders, and the control strings parts use
   editor/      build mode: tools, palette, settings panel, undo
   actors/      one file per kind of object: shapes, course pieces and machine parts
@@ -186,7 +204,7 @@ Optional `ActorDef` fields for the editor:
 | `placement` | `"click"` (default) drops it where you click; `"drag-line"` lets you drag it out, setting `width` and `angle`; `"draw-path"` lets you draw it, setting `points` |
 | `palette: false` | hides it from the palette |
 | `scale` | lets the select tool's handles resize it; `scaleBox()`, `scaleUniform("radius")` and `scalePoints()` in `core/scaling.ts` cover most shapes |
-| `variants` | extra palette buttons that place it with preset settings, like the Triangle and Hexagon shapes |
+| `variants` | extra palette buttons that place it with preset settings (and optionally turned by `angle`), like the Triangle and Hexagon shapes |
 
 Actors can also override these hooks:
 
@@ -199,6 +217,11 @@ Actors can also override these hooks:
 | `hitTest(x, y, tolerance)` | the editor asks if a click landed on it; the default checks the body's shapes |
 | `getBounds()` | the box the editor draws when it's selected |
 | `destroy()` | when removed; extend it if you made extra bodies or joints |
+
+An actor that changes gravity where it is (like a gravity zone) adds a
+`bendGravity(x, y, g)` method that returns the gravity at that point. The
+game asks every such actor, in level order, for each moving body on every
+step, and `game.gravityAt(x, y)` gives the result to anything that needs it.
 
 Actors talk to each other through `game.events`, for example
 `game.events.on("finish", ...)`.
@@ -227,6 +250,7 @@ which gives a number from -1 to 1. Control strings are described in
   "version": 1,
   "name": "My level",
   "gravity": [0, -10],
+  "turnView": false,
   "camera": { "x": 0, "y": 4, "zoom": 40 },
   "actors": [
     { "type": "start", "x": -5, "y": 8, "props": { "count": 3 } },
@@ -236,7 +260,8 @@ which gives a number from -1 to 1. Control strings are described in
 }
 ```
 
-`angle` is in radians, counter-clockwise. Any prop you leave out uses the
+`gravity` is a vector in m/s² with y up, so `[10, 0]` makes things fall to
+the right. `angle` is in radians, counter-clockwise. Any prop you leave out uses the
 actor type's default.
 
 Groups nest the things they hold under `children`. Children use the same
@@ -262,7 +287,9 @@ adding one is a matter of dropping a file there.
 4. **More shapes, hazards and gyros**: polygons and hollow outlines, palette presets, hazard zones, PID gyros (done)
 5. **A better select tool**: box select, multi-select, scale handles, dragging part ends (done)
 6. **Groups and assemblies**: weld shapes into one, or group a machine; save them to an inventory (done)
-7. **Images, scripting and bigger worlds**: image import with masking, gravity direction, script nodes
+7. **Gravity direction**: level gravity in any direction, gravity zones, planets, a view that turns with gravity (done)
+8. **Images**: import a picture, mask it and trace it into collision shapes
+9. **Script nodes**: kid-friendly "when this, do that" rules
 
 ## License
 
