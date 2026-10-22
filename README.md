@@ -74,6 +74,30 @@ where they started, with their wheels and parts, and marbles are destroyed. Its
 settings change which tags it sends back or destroys, or let it destroy
 anything that moves.
 
+### Pictures
+
+Pick **Picture…** (under Shapes) and choose a picture file, or drop a picture
+straight onto the level. Its see-through parts are empty and everything else
+is solid: transparent parts of a PNG always count as see-through, and so does
+white, the color a paint program's eraser leaves. So you can draw a whole
+level in a paint program, with ramps, walls and bowls, and play it.
+
+In build mode a faint dashed line shows what's solid. A picture's settings:
+
+| Setting | What it does |
+| --- | --- |
+| **See-through color** / **That color** | which color counts as empty (white unless you pick another); untick to use only PNG transparency |
+| **Closeness** | how close to that color still counts as empty; raise it if an off-white background shows up as solid |
+| **Detail** | how closely the solid shape follows the picture; lower is smoother |
+| **Moves** | turns it into a moving object, like a drawn crate |
+| **Solid** | untick for scenery you can't bump into |
+| **In front** | pictures draw behind everything else unless this is ticked |
+
+Resize and turn a picture with the select tool like anything else. Pictures
+are saved inside the level file, shrunk to at most 1024 pixels across so
+levels stay small enough to autosave. Try the **Drawn in a paint program**
+example.
+
 ### Gravity
 
 With nothing selected, the settings panel shows the level's own settings.
@@ -138,6 +162,8 @@ src/
     Connector.ts base class for parts attached to other actors
     Group.ts     base class for assemblies and welds, which hold other actors
     gravity.ts   gravity directions and the hook gravity zones use
+    images.ts    loading pictures and remembering their traced shapes
+    trace.ts     turning a picture's solid pixels into outlines and boxes
     input.ts     keys and sliders, and the control strings parts use
   editor/      build mode: tools, palette, settings panel, undo
   actors/      one file per kind of object: shapes, course pieces and machine parts
@@ -204,6 +230,7 @@ Optional `ActorDef` fields for the editor:
 | `placement` | `"click"` (default) drops it where you click; `"drag-line"` lets you drag it out, setting `width` and `angle`; `"draw-path"` lets you draw it, setting `points` |
 | `palette: false` | hides it from the palette |
 | `scale` | lets the select tool's handles resize it; `scaleBox()`, `scaleUniform("radius")` and `scalePoints()` in `core/scaling.ts` cover most shapes |
+| `importFile` | makes it from a file: its palette button asks for one, and matching files can be dropped on the level (see `actors/picture.ts`) |
 | `variants` | extra palette buttons that place it with preset settings (and optionally turned by `angle`), like the Triangle and Hexagon shapes |
 
 Actors can also override these hooks:
@@ -288,7 +315,7 @@ adding one is a matter of dropping a file there.
 5. **A better select tool**: box select, multi-select, scale handles, dragging part ends (done)
 6. **Groups and assemblies**: weld shapes into one, or group a machine; save them to an inventory (done)
 7. **Gravity direction**: level gravity in any direction, gravity zones, planets, a view that turns with gravity (done)
-8. **Images**: import a picture, mask it and trace it into collision shapes
+8. **Pictures**: import a picture, with white or transparent parts see-through, and play on what's drawn (done)
 9. **Script nodes**: kid-friendly "when this, do that" rules
 
 ## License

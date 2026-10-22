@@ -27,7 +27,16 @@ export class Palette {
     for (const def of listActorDefs()) {
       if (def.palette === false) continue;
       const list = groups.get(def.category) ?? [];
-      list.push(this.button(`place:${def.type}`, def.icon ?? "◆", def.label, def.description ?? ""));
+      const importer = def.importFile;
+      list.push(
+        this.button(
+          `place:${def.type}`,
+          def.icon ?? "◆",
+          importer ? `${def.label}…` : def.label,
+          def.description ?? "",
+          importer ? () => this.chooseFile(importer.accept) : undefined,
+        ),
+      );
       def.variants?.forEach((v, i) =>
         list.push(this.button(`place:${def.type}~${i}`, v.icon ?? def.icon ?? "◆", v.label, def.description ?? "")),
       );
@@ -121,6 +130,24 @@ export class Palette {
     });
     this.buttons.set(tool, b);
     return b;
+  }
+
+  /** Ask for a file and make an actor from it in the middle of the view. */
+  private chooseFile(accept: string): void {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = accept;
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        await this.editor.importFile(file);
+      } catch (err) {
+        console.error(err);
+        window.alert(`Could not use that file: ${(err as Error).message}`);
+      }
+    });
+    input.click();
   }
 
   private refresh(): void {

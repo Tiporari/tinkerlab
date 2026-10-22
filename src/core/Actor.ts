@@ -47,6 +47,11 @@ export abstract class Actor<P extends Props = Props> {
   /** Create physics bodies, fixtures and joints. Called once when added. */
   abstract build(): void;
 
+  /** Drawn (and picked) behind everything else, like a background picture. */
+  get behind(): boolean {
+    return false;
+  }
+
   /** Called when the simulation starts playing. */
   onPlay?(): void;
 

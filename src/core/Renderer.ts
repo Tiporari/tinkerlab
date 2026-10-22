@@ -38,7 +38,7 @@ export class Renderer {
 
     this.applyWorldTransform(dpr);
     this.drawGrid();
-    for (const actor of game.actors) {
+    for (const actor of game.layered()) {
       ctx.save();
       actor.draw(this);
       ctx.restore();

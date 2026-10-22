@@ -356,6 +356,11 @@ export class Game {
     this.pendingRemoval.add(actor);
   }
 
+  /** Actors in drawing order: anything that goes behind first, then the rest, each in level order. */
+  layered(): Actor[] {
+    return [...this.actors.filter((a) => a.behind), ...this.actors.filter((a) => !a.behind)];
+  }
+
   find(id: string): Actor | undefined {
     return this.actors.find((a) => a.id === id);
   }

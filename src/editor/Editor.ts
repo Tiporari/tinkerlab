@@ -6,7 +6,7 @@ import { EventBus } from "../core/events";
 import { Group } from "../core/Group";
 import type { Game } from "../core/Game";
 import type { Renderer } from "../core/Renderer";
-import { getActorDef, type ActorDef } from "../core/registry";
+import { getActorDef, listActorDefs, type ActorDef } from "../core/registry";
 import { cloneTree, dataBounds } from "../core/tree";
 import type { ActorData, LevelData } from "../core/types";
 import { snap, simplifyPath, tidy, type Pt } from "./geometry";
@@ -322,6 +322,20 @@ export class Editor {
     this.history.reset(this.game.level);
     this.select(null);
     this.events.emit("change", this.game.level);
+  }
+
+  /**
+   * Make an actor from a file, like a picture, with its middle at `at` (the
+   * middle of the view if not given), and select it.
+   */
+  async importFile(file: File, at?: Pt): Promise<Actor> {
+    if (!this.enabled) throw new Error("Stop playing first, then add it.");
+    const def = importerFor(file);
+    if (!def?.importFile) throw new Error("TinkerLab doesn't know what to do with that kind of file.");
+    const props = await def.importFile.read(file);
+    const p = at ?? { x: this.camera.x, y: this.camera.y };
+    this.setTool("select");
+    return this.create({ type: def.type, x: tidy(p.x), y: tidy(p.y), props });
   }
 
   create(data: ActorData): Actor {
@@ -699,16 +713,18 @@ export class Editor {
   private hitAt(p: Pt): { actor: Actor | null; outside: boolean } {
     const tolerance = HIT_PIXELS / this.camera.zoom;
     let outside = false;
-    for (let i = this.game.actors.length - 1; i >= 0; i--) {
-      const actor = this.game.actors[i];
+    // Topmost first, the way they're drawn.
+    const actors = this.game.layered();
+    for (let i = actors.length - 1; i >= 0; i--) {
+      const actor = actors[i];
       if (actor.transient || actor instanceof Group || !actor.hitTest(p.x, p.y, tolerance)) continue;
       const picked = this.lift(actor);
       if (picked) return { actor: picked, outside: false };
       outside = true;
     }
     // A closed weld's pieces have no body of their own, so the weld itself is what gets hit.
-    for (let i = this.game.actors.length - 1; i >= 0; i--) {
-      const actor = this.game.actors[i];
+    for (let i = actors.length - 1; i >= 0; i--) {
+      const actor = actors[i];
       if (!(actor instanceof Group) || !actor.body || !actor.hitTest(p.x, p.y, tolerance)) continue;
       const picked = this.lift(actor);
       if (picked) return { actor: picked, outside: false };
@@ -727,7 +743,8 @@ export class Editor {
   /** The topmost things with a physics body under a point, for attaching parts to. */
   bodiesAt(p: Pt): Actor[] {
     const tolerance = HIT_PIXELS / this.camera.zoom;
-    return this.game.actors
+    return this.game
+      .layered()
       .filter((a) => a.body && !a.transient && a.hitTest(p.x, p.y, tolerance))
       .reverse();
   }
@@ -1355,4 +1372,14 @@ function scaleAnchor(data: ActorData, end: "a" | "b", sx: number, sy: number): v
   const props = data.props!;
   props[`${end}x`] = tidy(Number(props[`${end}x`] ?? 0) * sx);
   props[`${end}y`] = tidy(Number(props[`${end}y`] ?? 0) * sy);
+}
+
+/** The actor type that can be made from this file, going by its type (e.g. image/png matches "image/*"). */
+export function importerFor(file: { type: string }): ActorDef | undefined {
+  return listActorDefs().find((def) =>
+    def.importFile?.accept.split(",").some((pattern) => {
+      const want = pattern.trim();
+      return want.endsWith("/*") ? file.type.startsWith(want.slice(0, -1)) : file.type === want;
+    }),
+  );
 }
