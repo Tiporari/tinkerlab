@@ -44,10 +44,6 @@ export class Wheel extends Connector<WheelProps> {
     this.trackPosition();
   }
 
-  dependsOn(): string[] {
-    return this.props.a ? [this.props.a] : [];
-  }
-
   update(): void {
     if (!this.joint || this.props.control === "") return;
     const throttle = this.game.input.axis(this.props.control) * (this.props.reverse ? -1 : 1);

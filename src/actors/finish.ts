@@ -24,11 +24,13 @@ export class Finish extends Actor<FinishProps> {
   }
 
   onContact(other: Actor | null): void {
-    if (!other || !other.tags.has(this.props.counts) || this.finished.has(other.id)) return;
-    this.finished.add(other.id);
+    // A wheel of a cart tagged "player" counts as the cart.
+    const owner = other ? this.game.tagged(other, this.props.counts) : null;
+    if (!owner || this.finished.has(owner.id)) return;
+    this.finished.add(owner.id);
     this.flash = 0.6;
-    this.game.events.emit("finish", { finish: this, actor: other, time: this.game.time });
-    if (this.props.collect) this.game.remove(other);
+    this.game.events.emit("finish", { finish: this, actor: owner, time: this.game.time });
+    if (this.props.collect) this.game.remove(owner);
   }
 
   update(dt: number): void {

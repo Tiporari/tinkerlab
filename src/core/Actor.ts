@@ -221,6 +221,11 @@ function distanceToSegment(
 }
 
 /** Ensure ids generated later never collide with ids loaded from a file. */
+/** A new id that no actor has used yet, like "block-12". */
+export function freshId(type: string): string {
+  return `${type}-${nextId++}`;
+}
+
 export function reserveId(id: string): void {
   const match = /-(\d+)$/.exec(id);
   if (match) nextId = Math.max(nextId, Number(match[1]) + 1);

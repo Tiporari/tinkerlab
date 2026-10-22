@@ -34,10 +34,6 @@ export class AngleGyro extends Connector<AngleGyroProps> {
     this.trackPosition();
   }
 
-  dependsOn(): string[] {
-    return this.props.a ? [this.props.a] : [];
-  }
-
   update(dt: number): void {
     const p = this.props;
     const body = this.bodyA;

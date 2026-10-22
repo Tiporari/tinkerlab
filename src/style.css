@@ -44,6 +44,13 @@ canvas.dragging { cursor: grabbing; }
 .tool { display: flex; align-items: center; gap: 8px; text-align: left; padding: 6px 8px; }
 .tool.active { background: var(--accent-soft); border-color: var(--accent); }
 .tool-icon { width: 18px; text-align: center; }
+.tool-row { position: relative; display: flex; }
+.tool-row .tool { flex: 1; min-width: 0; }
+.tool-row .tool span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-minis { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; }
+.tool-row:hover .tool-minis, .tool-row:focus-within .tool-minis { display: flex; }
+.tool-mini { padding: 1px 5px; font-size: 12px; }
+.tool-open { font-size: 12px; text-align: center; margin-top: 4px; }
 .palette-snap { margin-top: auto; font-size: 13px; padding: 8px 2px 0; }
 
 .inspector {
@@ -59,7 +66,7 @@ canvas.dragging { cursor: grabbing; }
 .number-control { display: flex; gap: 6px; align-items: center; min-width: 0; }
 .number-control input[type="range"] { flex: 1; min-width: 0; }
 .number-control input[type="number"] { width: 64px; font: inherit; padding: 3px 4px; border: 1px solid var(--line); border-radius: 4px; }
-.inspector-actions { display: flex; gap: 8px; margin-top: 16px; }
+.inspector-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 
 body.playing .palette, body.playing .inspector { opacity: 0.45; pointer-events: none; }
 

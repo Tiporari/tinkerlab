@@ -1,11 +1,13 @@
 import { registerBuiltinActors } from "./actors";
 import { Camera } from "./core/Camera";
 import { Game } from "./core/Game";
+import { Group } from "./core/Group";
 import { Renderer } from "./core/Renderer";
 import { attachViewControls } from "./core/viewControls";
 import type { LevelData } from "./core/types";
 import { Editor } from "./editor/Editor";
 import { Inspector } from "./editor/Inspector";
+import { Inventory } from "./editor/Inventory";
 import { Palette } from "./editor/Palette";
 import { builtinLevels, firstMarbleRun } from "./levels";
 import { blankLevel } from "./levels/blank";
@@ -65,8 +67,9 @@ const game = createGame();
 if (game.level.camera) camera.set(game.level.camera);
 
 const editor = new Editor(game, camera, canvas);
-new Palette($("#palette"), editor);
-new Inspector($("#inspector"), editor);
+const inventory = new Inventory();
+new Palette($("#palette"), editor, inventory);
+new Inspector($("#inspector"), editor, inventory);
 const controlPanel = new ControlPanel($("#controls"), game);
 attachViewControls(canvas, camera, (e) => !editor.enabled || e.button === 1 || e.button === 2 || editor.panKey);
 
@@ -128,6 +131,8 @@ function togglePlay(): void {
   if (game.running) game.pause();
   else {
     editor.setTool("select");
+    // Welds that were opened for editing close up again before anything moves.
+    editor.exitGroup(true);
     game.commit();
     game.play();
     controlPanel.refresh();
@@ -151,7 +156,7 @@ function updateButtons(): void {
   document.body.classList.toggle("playing", game.started);
   hint.textContent = game.started
     ? "Playing · drag to pan · scroll to zoom · Space pauses · R stops and goes back to building"
-    : "Building · drag a box to select several · Shift+click adds · Q/E rotate · Del deletes · Ctrl+Z undoes · right-drag or Space+drag pans · Space plays";
+    : "Building · drag a box to select several · Ctrl+G groups · double-click a group to go inside · Q/E rotate · Ctrl+Z undoes · right-drag or Space+drag pans · Space plays";
 }
 
 playButton.addEventListener("click", togglePlay);
@@ -228,7 +233,9 @@ importInput.addEventListener("change", async () => {
 
 /** While playing, keep anything tagged "player" in view. */
 function followPlayer(dt: number): void {
-  const player = game.actors.find((a) => a.tags.has("player") && a.body);
+  const tagged = game.actors.find((a) => a.tags.has("player"));
+  // An assembly has no body of its own, so follow the first piece that does.
+  const player = tagged instanceof Group ? [tagged, ...tagged.descendants()].find((a) => a.body) : tagged;
   if (!player?.body) return;
   const p = player.body.getPosition();
   const ease = 1 - Math.exp(-dt * 4);

@@ -40,8 +40,34 @@ export abstract class Connector<P extends ConnectorProps = ConnectorProps> exten
 
   /** The body of the actor with this id, or the world's ground body. */
   bodyOf(id: string): Body {
-    if (!id) return this.game.ground;
-    return this.game.find(id)?.body ?? this.game.ground;
+    return this.resolve(id, 0, 0).body;
+  }
+
+  /**
+   * The body an end really hangs on, and the anchor on it. Usually that's the
+   * target's own body; a piece of a welded shape has none of its own, so the
+   * end hangs on the weld at the same spot.
+   */
+  private resolve(id: string, x: number, y: number): { body: Body; local: Point } {
+    const target = id ? this.game.find(id) : undefined;
+    if (!target) return { body: this.game.ground, local: { x, y } };
+    if (target.body) return { body: target.body, local: { x, y } };
+    const holder = this.holderOf(target);
+    if (!holder?.body) return { body: this.game.ground, local: { x, y } };
+    // Where the anchor sits on the piece, measured from the weld's body (which is never turned when built).
+    const c = Math.cos(target.angle);
+    const s = Math.sin(target.angle);
+    return {
+      body: holder.body,
+      local: { x: target.x + x * c - y * s - holder.x, y: target.y + x * s + y * c - holder.y },
+    };
+  }
+
+  /** The outermost closed weld a piece is part of, which holds the piece's shapes in its body. */
+  private holderOf(target: Actor): Actor | null {
+    let holder: Actor | null = null;
+    for (let g = this.game.parentOf(target.id); g; g = this.game.parentOf(g.id)) if (g.merges) holder = g;
+    return holder;
   }
 
   get bodyA(): Body {
@@ -54,15 +80,24 @@ export abstract class Connector<P extends ConnectorProps = ConnectorProps> exten
 
   /** Anchor A in world coordinates, following its body as it moves. */
   worldA(): Point {
-    return this.bodyA.getWorldPoint(Vec2(this.props.ax, this.props.ay));
+    const { body, local } = this.resolve(this.props.a, this.props.ax, this.props.ay);
+    return body.getWorldPoint(Vec2(local.x, local.y));
   }
 
   worldB(): Point {
-    return this.bodyB.getWorldPoint(Vec2(this.props.bx, this.props.by));
+    const { body, local } = this.resolve(this.props.b, this.props.bx, this.props.by);
+    return body.getWorldPoint(Vec2(local.x, local.y));
   }
 
+  /** What it's attached to, and the weld holding a piece it's attached to (so it's rebuilt after the weld). */
   dependsOn(): string[] {
-    return [this.props.a, this.props.b].filter(Boolean);
+    const ids = [this.props.a, this.props.b].filter(Boolean);
+    for (const id of [...ids]) {
+      const target = this.game.find(id);
+      const holder = target ? this.holderOf(target) : null;
+      if (holder) ids.push(holder.id);
+    }
+    return ids;
   }
 
   /** Remember where anchor A is, so saved files show roughly where the part sits. */

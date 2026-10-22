@@ -22,10 +22,6 @@ export class Thruster extends Connector<ThrusterProps> {
     this.trackPosition();
   }
 
-  dependsOn(): string[] {
-    return this.props.a ? [this.props.a] : [];
-  }
-
   /** The direction of push in world space: "up" on the target, turned by this thruster's angle. */
   private direction(): { x: number; y: number } {
     const local = Vec2(-Math.sin(this.angle), Math.cos(this.angle));

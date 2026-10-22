@@ -1,0 +1,22 @@
+{
+  "format": "tinkerlab/assembly",
+  "version": 1,
+  "name": "Rocket",
+  "description": "Fly with ↑, steer with ← and →. A gyro keeps it upright.",
+  "actors": [
+    {
+      "id": "rocket", "type": "assembly", "x": 0, "y": 0, "props": { "name": "Rocket" },
+      "children": [
+        {
+          "id": "rocket-hull", "type": "weld", "x": 0, "y": 0, "props": { "name": "Hull" },
+          "children": [
+            { "id": "rocket-body", "type": "block", "x": 0, "y": 0, "props": { "width": 0.6, "height": 1.4, "dynamic": true, "color": "#dc2626" } },
+            { "id": "rocket-nose", "type": "polygon", "x": 0, "y": 0.86, "props": { "sides": 3, "size": 0.35, "dynamic": true, "color": "#e2e8f0" } }
+          ]
+        },
+        { "id": "rocket-engine", "type": "thruster", "x": 0, "y": -0.7, "props": { "a": "rocket-body", "ax": 0, "ay": -0.7, "force": 25 } },
+        { "id": "rocket-gyro", "type": "gyro-angle", "x": 0, "y": 0, "props": { "a": "rocket-body", "ax": 0, "ay": 0, "steer": "keys:ArrowLeft,ArrowRight", "steerRange": 25 } }
+      ]
+    }
+  ]
+}

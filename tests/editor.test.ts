@@ -119,6 +119,8 @@ describe("every actor type", () => {
         x: 1,
         y: 2,
         props: host ? { a: host.id, ax: 0, ay: 0, bx: 3, by: 2 } : {},
+        // Groups need something inside them.
+        children: def.category === "Groups" ? [{ type: "ball", x: 1, y: 2, props: { dynamic: true } }] : undefined,
       });
       for (const field of def.props) {
         if (!field.hidden) expect(actor.props[field.key]).toEqual(field.default);

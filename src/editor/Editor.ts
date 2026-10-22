@@ -3,20 +3,24 @@ import { unionBounds } from "../core/Actor";
 import type { Camera } from "../core/Camera";
 import { Connector } from "../core/Connector";
 import { EventBus } from "../core/events";
+import { Group } from "../core/Group";
 import type { Game } from "../core/Game";
 import type { Renderer } from "../core/Renderer";
 import { getActorDef, type ActorDef } from "../core/registry";
+import { cloneTree, dataBounds } from "../core/tree";
 import type { ActorData, LevelData } from "../core/types";
 import { snap, simplifyPath, tidy, type Pt } from "./geometry";
 import { History } from "./History";
 
-/** "select", or "place:<actor type>" while placing a new actor. */
-export type ToolId = "select" | `place:${string}`;
+/** "select", "place:<actor type>" while placing a new actor, or "stamp:<name>" while placing a saved assembly. */
+export type ToolId = "select" | `place:${string}` | `stamp:${string}`;
 
 export interface EditorEvents extends Record<string, unknown> {
   /** The selection changed, or a selected actor was rebuilt. Carries the actor when exactly one is selected. */
   selection: Actor | null;
   tool: ToolId;
+  /** Went into or came out of a group. Carries the group's id, or null at the top level. */
+  scope: string | null;
   /** The level changed in a way worth saving. */
   change: LevelData;
 }
@@ -80,6 +84,10 @@ export class Editor {
   grid = 0.25;
   /** While true (Space held), drags pan the view and the editor stays out of the way. */
   panKey = false;
+  /** The group being edited from inside (after a double-click), or null at the top level. */
+  scope: string | null = null;
+  /** What the stamp tool drops: saved actors centred on 0, 0. */
+  private stampActors: ActorData[] = [];
 
   private gesture: Gesture | null = null;
   private pointerId: number | null = null;
@@ -95,6 +103,7 @@ export class Editor {
     canvas.addEventListener("pointerup", (e) => this.onPointerUp(e));
     canvas.addEventListener("pointercancel", () => this.cancelGesture());
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+    canvas.addEventListener("dblclick", (e) => this.onDoubleClick(e as PointerEvent));
   }
 
   /** Editing is only allowed before play starts. */
@@ -117,6 +126,37 @@ export class Editor {
     return this.selection.map((id) => this.game.find(id)).filter((a): a is Actor => !!a);
   }
 
+  /** The selected actor when exactly one thing that isn't a group is selected. Handles treat a group like several things. */
+  private solo(): Actor | null {
+    const one = this.selected;
+    return one instanceof Group ? null : one;
+  }
+
+  /** The selection with everything inside selected groups. */
+  private expanded(): Actor[] {
+    return this.selectedActors.flatMap((a) => (a instanceof Group ? [a, ...a.descendants()] : [a]));
+  }
+
+  /** Is this actor directly inside the group being edited (or at the top level, when none is)? */
+  inScope(actor: Actor): boolean {
+    return (this.game.parentOf(actor.id)?.id ?? null) === this.scope;
+  }
+
+  /**
+   * The thing a click on `actor` picks at the current level: the actor itself,
+   * or the group around it that sits at this level. Null if it's outside the
+   * group being edited.
+   */
+  private lift(actor: Actor): Actor | null {
+    let current: Actor = actor;
+    for (;;) {
+      if (this.inScope(current)) return current;
+      const parent = this.game.parentOf(current.id);
+      if (!parent) return null;
+      current = parent;
+    }
+  }
+
   setTool(tool: ToolId): void {
     this.cancelGesture();
     this.tool = tool;
@@ -134,7 +174,133 @@ export class Editor {
   }
 
   selectAll(): void {
-    this.setSelection(this.game.actors.filter((a) => !a.transient).map((a) => a.id));
+    this.setSelection(this.game.actors.filter((a) => !a.transient && this.inScope(a)).map((a) => a.id));
+  }
+
+  // ---- Groups --------------------------------------------------------------
+
+  /**
+   * Group the selection. "assembly" keeps parts separate (each still has its
+   * own settings); "weld" fuses shapes into one solid body. Parts that only
+   * hang off the selected things join an assembly too. Returns a reason it
+   * can't be done, or null when it worked.
+   */
+  groupSelected(type: "assembly" | "weld"): string | null {
+    if (!this.enabled) return null;
+    const ids = type === "assembly" ? this.withParts(this.selection) : new Set(this.selection);
+    const members = this.game.actors.filter((a) => ids.has(a.id));
+    if (type === "weld") {
+      if (members.length < 2) return "Pick two or more shapes to weld together.";
+      const bad = members.find((a) => a instanceof Connector || (!a.body && !(a instanceof Group && a.merges)));
+      if (bad) return `${bad.def.label} can't be welded. Only shapes like blocks, balls and paths can.`;
+    } else if (!members.length) {
+      return "Pick something to group first.";
+    }
+    const group = this.game.makeGroup(type, members.map((m) => m.id));
+    this.commit();
+    this.select(group);
+    return null;
+  }
+
+  /** Take apart the selected groups, one level. Their pieces stay selected. */
+  ungroupSelected(): void {
+    if (!this.enabled) return;
+    const groups = this.selectedActors.filter((a): a is Group => a instanceof Group);
+    if (!groups.length) return;
+    const freed = groups.flatMap((g) => this.game.ungroup(g).map((a) => a.id));
+    this.commit();
+    this.setSelection([...this.selection.filter((id) => this.game.find(id)), ...freed]);
+  }
+
+  /** Go inside a group to pick and change its pieces. A weld comes apart until you leave. */
+  enterGroup(group: Group): void {
+    if (!this.enabled) return;
+    this.cancelGesture();
+    if (group.merges) {
+      this.game.openGroups.add(group.id);
+      this.game.replace(group, group.serialize());
+    }
+    this.scope = group.id;
+    this.select(null);
+    this.events.emit("scope", this.scope);
+  }
+
+  /** Come out of the group being edited, one level; or all the way with `all`. */
+  exitGroup(all = false): void {
+    if (!this.scope) return;
+    while (this.scope) {
+      const group = this.game.find(this.scope);
+      const id = this.scope;
+      this.scope = group ? (this.game.parentOf(group.id)?.id ?? null) : null;
+      if (group && this.game.openGroups.delete(id)) this.game.replace(group, group.serialize());
+      if (!all) {
+        this.select(group ?? null);
+        break;
+      }
+    }
+    if (all) this.select(null);
+    this.events.emit("scope", this.scope);
+  }
+
+  /** Ids plus every part that only hangs off things among them, like a cart's wheels. */
+  private withParts(ids: string[]): Set<string> {
+    const set = new Set(ids);
+    const inside = (id: string) => {
+      for (let g = this.game.parentOf(id); g; g = this.game.parentOf(g.id)) if (set.has(g.id)) return true;
+      return set.has(id);
+    };
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const a of this.game.actors) {
+        if (set.has(a.id) || a.transient || !(a instanceof Connector) || !this.inScope(a)) continue;
+        const targets = [a.props.a, a.props.b].filter(Boolean);
+        if (targets.length && targets.every(inside)) {
+          set.add(a.id);
+          grew = true;
+        }
+      }
+    }
+    return set;
+  }
+
+  /**
+   * The selection as saved data, ready for the inventory: centred on 0, 0,
+   * and wrapped in an assembly if it's more than one thing.
+   */
+  selectionData(): ActorData[] | null {
+    const ids = this.withParts(this.selection);
+    const top = this.game.actors.filter((a) => ids.has(a.id) && !a.transient);
+    if (!top.length) return null;
+    let list = top.map((a) => a.serialize());
+    if (list.length > 1) list = [{ type: "assembly", x: 0, y: 0, props: { name: "Assembly" }, children: list }];
+    const b = dataBounds(list);
+    const center = b ? { x: tidy(snap((b.minX + b.maxX) / 2, 0.05)), y: tidy(snap((b.minY + b.maxY) / 2, 0.05)) } : { x: 0, y: 0 };
+    return cloneTree(list, { x: -center.x, y: -center.y });
+  }
+
+  /** Get ready to drop copies of saved actors (centred on 0, 0) wherever the next click is. */
+  startStamp(name: string, actors: ActorData[]): void {
+    this.stampActors = structuredClone(actors);
+    this.setTool(`stamp:${name}`);
+  }
+
+  /** Drop a copy of the stamp tool's actors centred on a point. */
+  stampAt(p: Pt): Actor[] {
+    const roots = this.game.addTree(cloneTree(this.stampActors, p));
+    this.adopt(roots);
+    this.commit();
+    this.setSelection(roots.map((r) => r.id));
+    return roots;
+  }
+
+  /** New things made while inside a group go into that group, if they can. */
+  private adopt(actors: Actor[]): void {
+    const group = this.scope ? this.game.find(this.scope) : null;
+    if (!(group instanceof Group)) return;
+    const fits = actors.filter((a) => group.type !== "weld" || (!(a instanceof Connector) && (a.body || a instanceof Group)));
+    if (!fits.length) return;
+    group.childIds.push(...fits.map((a) => a.id));
+    this.game.replace(group, group.serialize());
   }
 
   // ---- Changes -----------------------------------------------------------
@@ -149,6 +315,9 @@ export class Editor {
   /** Replace the whole level, e.g. when opening a file. Clears undo. */
   loadLevel(level: LevelData): void {
     this.cancelGesture();
+    this.scope = null;
+    this.game.openGroups.clear();
+    this.events.emit("scope", null);
     this.game.load(level);
     this.history.reset(this.game.level);
     this.select(null);
@@ -157,6 +326,7 @@ export class Editor {
 
   create(data: ActorData): Actor {
     const actor = this.game.add(data);
+    this.adopt([actor]);
     this.commit();
     this.select(actor);
     return actor;
@@ -191,45 +361,18 @@ export class Editor {
    */
   duplicateSelected(): void {
     if (!this.selection.length || !this.enabled) return;
-    const ids = new Set(this.selectedActors.map((a) => a.id));
-    for (let grew = true; grew; ) {
-      grew = false;
-      for (const a of this.game.actors) {
-        if (ids.has(a.id) || a.transient || !(a instanceof Connector)) continue;
-        const targets = a.dependsOn();
-        if (targets.length && targets.every((t) => ids.has(t))) {
-          ids.add(a.id);
-          grew = true;
-        }
-      }
-    }
-    const originals = this.game.actors.filter((a) => ids.has(a.id)).sort((a, b) => (a.def.layer ?? 0) - (b.def.layer ?? 0));
-    const renamed = new Map<string, string>();
-    const made: string[] = [];
-    for (const actor of originals) {
-      const data = actor.serialize();
-      delete data.id;
-      data.x = tidy(data.x + 0.5);
-      data.y = tidy(data.y - 0.5);
-      if (actor instanceof Connector && data.props) {
-        for (const end of ["a", "b"] as const) {
-          const target = data.props[end] as string;
-          if (target && renamed.has(target)) data.props[end] = renamed.get(target)!;
-          else if (!target) this.moveWorldAnchor(data, end, (p) => ({ x: p.x + 0.5, y: p.y - 0.5 }));
-        }
-      }
-      const copy = this.game.add(data);
-      renamed.set(actor.id, copy.id);
-      made.push(copy.id);
-    }
+    const ids = this.withParts(this.selection);
+    const originals = this.game.actors.filter((a) => ids.has(a.id) && this.inScope(a)).map((a) => a.serialize());
+    const roots = this.game.addTree(cloneTree(originals, { x: 0.5, y: -0.5 }));
+    this.adopt(roots);
     this.commit();
-    this.setSelection(made);
+    this.setSelection(roots.map((r) => r.id));
   }
 
   /** Turn the selection by `delta` radians: one thing about itself, several about their middle. */
   rotateSelected(delta: number): void {
     if (!this.enabled) return;
-    const single = this.selected;
+    const single = this.solo();
     if (single) {
       if (!this.canTurn(single)) return;
       this.updateSelected((d) => {
@@ -263,6 +406,10 @@ export class Editor {
   private restore(level: LevelData): void {
     const keep = this.selection;
     this.game.load(level);
+    if (this.scope && !this.game.find(this.scope)) {
+      this.scope = null;
+      this.events.emit("scope", null);
+    }
     this.setSelection(keep);
     this.events.emit("change", this.game.level);
   }
@@ -277,9 +424,9 @@ export class Editor {
     return !!actor && (actor.def.poseFields ?? ["x", "y", "angle"]).includes("angle");
   }
 
-  /** Selected things that have their own position. Parts on them follow along. */
+  /** Selected things (and things inside selected groups) that have their own position. Parts on them follow along. */
   private movers(): Actor[] {
-    return this.selectedActors.filter((a) => this.canMove(a));
+    return this.expanded().filter((a) => !(a instanceof Group) && this.canMove(a));
   }
 
   /**
@@ -287,9 +434,10 @@ export class Editor {
    * selection itself and every part attached to the things being moved.
    */
   private capture(): Originals {
-    const ids = new Set(this.selection);
+    // Groups rebuild by themselves when their pieces do.
+    const ids = new Set(this.expanded().filter((a) => !(a instanceof Group)).map((a) => a.id));
     for (const mover of this.movers()) {
-      for (const part of this.game.dependentsOf(mover.id)) ids.add(part.id);
+      for (const part of this.game.dependentsOf(mover.id)) if (!(part instanceof Group)) ids.add(part.id);
     }
     const orig: Originals = new Map();
     for (const actor of this.game.actors) if (ids.has(actor.id)) orig.set(actor.id, actor.serialize());
@@ -325,7 +473,7 @@ export class Editor {
       const dy = (p.y - center.y) * grow;
       return { x: center.x + dx * cos - dy * sin + shift.x, y: center.y + dx * sin + dy * cos + shift.y };
     };
-    const selected = new Set(this.selection);
+    const selected = new Set(this.expanded().map((a) => a.id));
     const movers = new Set(this.movers().map((a) => a.id));
     this.rebuildFrom(orig, (data, actor) => {
       const def = actor.def;
@@ -368,14 +516,14 @@ export class Editor {
 
   /** The box the scale handles sit on, or null if the selection can't be scaled. */
   private scaleFrame(): Frame | null {
-    const single = this.selected;
+    const single = this.solo();
     if (single) {
       const box = single.def.scale ? single.localBounds() : null;
       if (!box || !single.body) return null;
       const p = single.body.getPosition();
       return { x: p.x, y: p.y, angle: single.body.getAngle(), box };
     }
-    if (this.selection.length < 2 || !this.movers().length) return null;
+    if (!this.movers().length) return null;
     const box = this.selectionBounds();
     return box ? { x: 0, y: 0, angle: 0, box } : null;
   }
@@ -385,7 +533,7 @@ export class Editor {
     const zoom = this.camera.zoom;
     const pad = PAD_PIXELS / zoom;
     const list: Handle[] = [];
-    const single = this.selected;
+    const single = this.solo();
 
     if (single instanceof Connector) {
       const placement = single.def.placement;
@@ -427,7 +575,7 @@ export class Editor {
   }
 
   private rotateHandle(): Pt | null {
-    const single = this.selected;
+    const single = this.solo();
     if (single && !this.canTurn(single)) return null;
     if (!single && !this.movers().some((a) => this.canTurn(a))) return null;
     const b = single ? single.getBounds() : this.selectionBounds();
@@ -468,6 +616,15 @@ export class Editor {
       this.selectAll();
       return true;
     }
+    if (mod && key === "g") {
+      if (e.shiftKey) this.ungroupSelected();
+      else this.groupSelected("assembly");
+      return true;
+    }
+    if (!mod && e.key === "Enter" && this.selected instanceof Group) {
+      this.enterGroup(this.selected);
+      return true;
+    }
     if (mod) return false;
     const step = e.shiftKey ? 1 : 15;
     const nudge = e.shiftKey ? 0.05 : this.snapOn ? this.grid : 0.1;
@@ -480,7 +637,8 @@ export class Editor {
       case "Escape":
         if (this.gesture) this.cancelGesture();
         else if (this.tool !== "select") this.setTool("select");
-        else this.select(null);
+        else if (this.selection.length || !this.scope) this.select(null);
+        else this.exitGroup();
         return true;
       case "q":
       case "Q":
@@ -529,14 +687,41 @@ export class Editor {
     return { x: tidy(snap(p.x, g)), y: tidy(snap(p.y, g)) };
   }
 
-  /** The topmost saved actor under a world point. */
+  /**
+   * The topmost saved thing under a world point, at the level being edited:
+   * a click on a piece of a group picks the group, unless you're inside it.
+   * Things outside the group being edited count as nothing.
+   */
   actorAt(p: Pt): Actor | null {
+    return this.hitAt(p).actor;
+  }
+
+  private hitAt(p: Pt): { actor: Actor | null; outside: boolean } {
     const tolerance = HIT_PIXELS / this.camera.zoom;
+    let outside = false;
     for (let i = this.game.actors.length - 1; i >= 0; i--) {
       const actor = this.game.actors[i];
-      if (!actor.transient && actor.hitTest(p.x, p.y, tolerance)) return actor;
+      if (actor.transient || actor instanceof Group || !actor.hitTest(p.x, p.y, tolerance)) continue;
+      const picked = this.lift(actor);
+      if (picked) return { actor: picked, outside: false };
+      outside = true;
     }
-    return null;
+    // A closed weld's pieces have no body of their own, so the weld itself is what gets hit.
+    for (let i = this.game.actors.length - 1; i >= 0; i--) {
+      const actor = this.game.actors[i];
+      if (!(actor instanceof Group) || !actor.body || !actor.hitTest(p.x, p.y, tolerance)) continue;
+      const picked = this.lift(actor);
+      if (picked) return { actor: picked, outside: false };
+      outside = true;
+    }
+    return { actor: null, outside };
+  }
+
+  private onDoubleClick(e: PointerEvent): void {
+    if (!this.enabled || this.tool !== "select") return;
+    const hit = this.hitAt(this.world(e));
+    if (hit.actor instanceof Group) this.enterGroup(hit.actor);
+    else if (!hit.actor && this.scope) this.exitGroup();
   }
 
   /** The topmost things with a physics body under a point, for attaching parts to. */
@@ -561,6 +746,10 @@ export class Editor {
 
     if (this.tool === "select") {
       this.gesture = this.startSelectGesture(e, p);
+      return;
+    }
+    if (this.tool.startsWith("stamp:")) {
+      this.gesture = { kind: "click", at: this.snapPt(p) };
       return;
     }
 
@@ -593,17 +782,23 @@ export class Editor {
     const handle = this.handleAt(p);
     if (handle?.kind === "end") return { kind: "end", id: this.selection[0], end: handle.end, at: p };
     if (handle?.kind === "rotate") {
-      const single = this.selected;
+      const single = this.solo();
       const b = this.selectionBounds()!;
       const center = single ? { x: single.x, y: single.y } : { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
       return { kind: "rotate", center, from: Math.atan2(p.y - center.y, p.x - center.x), orig: this.capture(), single: !!single };
     }
     if (handle?.kind === "scale") {
       const frame = this.scaleFrame()!;
-      return { kind: "scale", frame, handle, grab: toLocal(frame, p), orig: this.capture(), id: this.selectedId };
+      return { kind: "scale", frame, handle, grab: toLocal(frame, p), orig: this.capture(), id: this.solo()?.id ?? null };
     }
 
-    const hit = this.actorAt(p);
+    let found = this.hitAt(p);
+    if (found.outside && !found.actor && this.scope) {
+      // A click outside the group being edited leaves it.
+      this.exitGroup(true);
+      found = this.hitAt(p);
+    }
+    const hit = found.actor;
     if (!hit) {
       if (e.pointerType === "touch") return { kind: "pan", last: this.screen(e) };
       if (!e.shiftKey) this.select(null);
@@ -714,6 +909,10 @@ export class Editor {
         this.finishMarquee(g.a, g.b, g.add);
         break;
       case "click": {
+        if (this.tool.startsWith("stamp:")) {
+          this.stampAt(g.at);
+          break;
+        }
         const placement = getActorDef(this.placingType()).placement ?? "click";
         if (placement === "pin") this.finishPin(g.at);
         else if (placement === "attach") this.finishAttach(g.at);
@@ -812,7 +1011,7 @@ export class Editor {
     if ((box.maxX - box.minX) * this.camera.zoom < 4 && (box.maxY - box.minY) * this.camera.zoom < 4) return;
     const inside = this.game.actors
       .filter((actor) => {
-        const bb = actor.transient ? null : actor.getBounds();
+        const bb = actor.transient || !this.inScope(actor) ? null : actor.getBounds();
         return !!bb && bb.minX >= box.minX && bb.maxX <= box.maxX && bb.minY >= box.minY && bb.maxY <= box.maxY;
       })
       .map((actor) => actor.id);
@@ -973,6 +1172,20 @@ export class Editor {
     const pad = PAD_PIXELS * px;
     const blue = "#2563eb";
 
+    // The group being edited from inside.
+    const scope = this.scope ? this.game.find(this.scope) : null;
+    const sb = scope?.getBounds();
+    if (scope && sb) {
+      const big = 10 * px;
+      ctx.setLineDash([8 * px, 5 * px]);
+      ctx.lineWidth = 2 * px;
+      ctx.strokeStyle = "#d97706";
+      ctx.strokeRect(sb.minX - big, sb.minY - big, sb.maxX - sb.minX + 2 * big, sb.maxY - sb.minY + 2 * big);
+      ctx.setLineDash([]);
+      const name = String(scope.props.name ?? scope.def.label);
+      r.drawLabel(`Inside ${name} · Esc to leave`, (sb.minX + sb.maxX) / 2, sb.maxY + big + 12 * px, "#b45309", 12);
+    }
+
     const actors = this.selectedActors;
     ctx.lineWidth = 1.5 * px;
     ctx.strokeStyle = blue;
@@ -1002,7 +1215,7 @@ export class Editor {
 
     const rotate = this.rotateHandle();
     if (rotate) {
-      const b = (this.selected ?? null)?.getBounds() ?? this.selectionBounds();
+      const b = this.solo()?.getBounds() ?? this.selectionBounds();
       if (b) {
         ctx.lineWidth = 1.5 * px;
         ctx.beginPath();
