@@ -2,6 +2,7 @@ import { Actor } from "../core/Actor";
 import { colorField, dynamicField, materialFields } from "../core/fields";
 import type { ActorDef } from "../core/registry";
 import { addOutline, addSolid, hollowFields, regularPolygon } from "../core/shapes";
+import { scaleUniform } from "../core/scaling";
 
 interface PolygonProps extends Record<string, number | string | boolean> {
   sides: number;
@@ -43,6 +44,7 @@ const polygon: ActorDef = {
     { label: "Triangle", icon: "▲", props: { sides: 3 } },
     { label: "Hexagon", icon: "⬢", props: { sides: 6 } },
   ],
+  scale: scaleUniform("size"),
   props: [
     { key: "sides", label: "Sides", kind: "number", default: 5, min: 3, max: 12, step: 1 },
     { key: "size", label: "Size", kind: "number", default: 0.6, min: 0.05, max: 20, step: 0.05, help: "Distance from the middle to a corner." },

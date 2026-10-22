@@ -24,12 +24,38 @@ export class Inspector {
   }
 
   show(actor: Actor | null, force = false): void {
-    const id = actor?.id ?? null;
+    const many = this.editor.selection.length > 1;
+    const id = many ? this.editor.selection.join(",") : (actor?.id ?? null);
     // Rebuilding while someone drags a slider would steal focus, so only
     // rebuild when the selection really changes, or values need refreshing.
     if (!force && id === this.shownId && this.root.contains(document.activeElement)) return;
     this.shownId = id;
-    this.root.replaceChildren(actor ? this.actorPanel(actor) : this.levelPanel());
+    this.root.replaceChildren(many ? this.groupPanel() : actor ? this.actorPanel(actor) : this.levelPanel());
+  }
+
+  private groupPanel(): HTMLElement {
+    const panel = document.createElement("div");
+    const actors = this.editor.selectedActors;
+    panel.append(
+      heading(
+        `${actors.length} things selected`,
+        "Drag any of them to move them all. Drag a corner square to resize them, or the round handle to turn them. Shift+click adds or removes one.",
+      ),
+    );
+    const counts = new Map<string, number>();
+    for (const a of actors) counts.set(a.def.label, (counts.get(a.def.label) ?? 0) + 1);
+    const list = document.createElement("p");
+    list.className = "muted";
+    list.textContent = [...counts].map(([label, n]) => (n > 1 ? `${n} × ${label}` : label)).join(", ");
+    panel.append(list);
+    const actions = document.createElement("div");
+    actions.className = "inspector-actions";
+    actions.append(
+      actionButton("Duplicate", "Ctrl+D", () => this.editor.duplicateSelected()),
+      actionButton("Delete", "Del", () => this.editor.deleteSelected(), "danger"),
+    );
+    panel.append(actions);
+    return panel;
   }
 
   private actorPanel(actor: Actor): HTMLElement {

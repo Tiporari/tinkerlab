@@ -68,7 +68,17 @@ const editor = new Editor(game, camera, canvas);
 new Palette($("#palette"), editor);
 new Inspector($("#inspector"), editor);
 const controlPanel = new ControlPanel($("#controls"), game);
-attachViewControls(canvas, camera, (e) => !editor.enabled || e.button === 1 || e.button === 2);
+attachViewControls(canvas, camera, (e) => !editor.enabled || e.button === 1 || e.button === 2 || editor.panKey);
+
+// While building, holding Space and dragging pans. A quick tap of Space still plays.
+let pannedWithSpace = false;
+canvas.addEventListener("pointerdown", () => {
+  if (editor.panKey) pannedWithSpace = true;
+});
+function setPanKey(on: boolean): void {
+  editor.panKey = on;
+  canvas.style.cursor = on ? "grab" : editor.tool === "select" ? "" : "crosshair";
+}
 
 editor.events.on("change", (level) => {
   autosave(level);
@@ -141,7 +151,7 @@ function updateButtons(): void {
   document.body.classList.toggle("playing", game.started);
   hint.textContent = game.started
     ? "Playing · drag to pan · scroll to zoom · Space pauses · R stops and goes back to building"
-    : "Building · pick a tool on the left · Q/E rotate · Del deletes · Ctrl+Z undoes · G toggles snap · right-drag pans · Space plays";
+    : "Building · drag a box to select several · Shift+click adds · Q/E rotate · Del deletes · Ctrl+Z undoes · right-drag or Space+drag pans · Space plays";
 }
 
 playButton.addEventListener("click", togglePlay);
@@ -164,7 +174,11 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.code === "Space") {
     e.preventDefault();
-    togglePlay();
+    if (game.started) togglePlay();
+    else if (!e.repeat) {
+      pannedWithSpace = false;
+      setPanKey(true);
+    }
   } else if (e.code === "KeyR" && !e.ctrlKey && !e.metaKey && game.started) {
     stop();
   } else if (editor.handleKey(e)) {
@@ -172,8 +186,17 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-window.addEventListener("keyup", (e) => game.input.release(e.code));
-window.addEventListener("blur", () => game.input.keys.clear());
+window.addEventListener("keyup", (e) => {
+  game.input.release(e.code);
+  if (e.code === "Space" && editor.panKey) {
+    setPanKey(false);
+    if (!pannedWithSpace) togglePlay();
+  }
+});
+window.addEventListener("blur", () => {
+  game.input.keys.clear();
+  setPanKey(false);
+});
 
 // ---- Files -------------------------------------------------------------------
 

@@ -2,6 +2,7 @@ import { Box } from "planck";
 import { Actor } from "../core/Actor";
 import type { Renderer } from "../core/Renderer";
 import type { ActorDef } from "../core/registry";
+import { scaleBox } from "../core/scaling";
 
 interface FinishProps extends Record<string, number | string | boolean> {
   width: number;
@@ -62,6 +63,7 @@ const finish: ActorDef = {
   category: "Course",
   icon: "⚑",
   description: "Counts marbles that reach it.",
+  scale: scaleBox(),
   props: [
     { key: "width", label: "Width", kind: "number", default: 2, min: 0.2, max: 100, step: 0.1 },
     { key: "height", label: "Height", kind: "number", default: 1.5, min: 0.2, max: 100, step: 0.1 },

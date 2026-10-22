@@ -41,6 +41,11 @@ export interface ActorDef {
    * e.g. a Polygon with 3 sides labelled "Triangle".
    */
   variants?: ActorVariant[];
+  /**
+   * Lets the select tool's handles resize it. Without this it can only be
+   * moved and turned. See `core/scaling.ts` for ready-made ones.
+   */
+  scale?: ScaleSpec;
   /** Set false to hide it from the editor palette. */
   palette?: boolean;
   props: PropField[];
@@ -51,6 +56,16 @@ export interface ActorVariant {
   label: string;
   icon?: string;
   props: Props;
+}
+
+export interface ScaleSpec {
+  /** "xy" can stretch width and height separately; "uniform" keeps its shape. */
+  axes: "xy" | "uniform";
+  /**
+   * Grow the props by `sx` along the actor's own x axis and `sy` along its y,
+   * about its own origin. For "uniform", sx and sy are the same.
+   */
+  apply(props: Props, sx: number, sy: number): void;
 }
 
 export type Placement = "click" | "drag-line" | "draw-path" | "connect" | "pin" | "attach";

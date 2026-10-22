@@ -1,10 +1,11 @@
-import type { Actor } from "../core/Actor";
+import type { Actor, Bounds } from "../core/Actor";
+import { unionBounds } from "../core/Actor";
 import type { Camera } from "../core/Camera";
 import { Connector } from "../core/Connector";
 import { EventBus } from "../core/events";
 import type { Game } from "../core/Game";
 import type { Renderer } from "../core/Renderer";
-import { getActorDef } from "../core/registry";
+import { getActorDef, type ActorDef } from "../core/registry";
 import type { ActorData, LevelData } from "../core/types";
 import { snap, simplifyPath, tidy, type Pt } from "./geometry";
 import { History } from "./History";
@@ -13,16 +14,42 @@ import { History } from "./History";
 export type ToolId = "select" | `place:${string}`;
 
 export interface EditorEvents extends Record<string, unknown> {
-  /** The selected actor changed, or the selected actor was rebuilt. */
+  /** The selection changed, or a selected actor was rebuilt. Carries the actor when exactly one is selected. */
   selection: Actor | null;
   tool: ToolId;
   /** The level changed in a way worth saving. */
   change: LevelData;
 }
 
+/** Saved data of everything a drag can change, so each step starts fresh from it and cancel can put it back. */
+type Originals = Map<string, ActorData>;
+
+/** Which end of a part is being dragged. "pin" moves both ends of a hinge together. */
+type End = "a" | "b" | "pin";
+
+/**
+ * A box to put handles on: `box` is in a frame centred on (x, y) and turned
+ * by `angle`. One actor uses its own body's frame; a group uses the world's.
+ */
+interface Frame {
+  x: number;
+  y: number;
+  angle: number;
+  box: Bounds;
+}
+
+type Handle =
+  | { kind: "rotate"; at: Pt }
+  /** sx / sy say which side it sits on: -1 left or bottom, 1 right or top, 0 the middle. */
+  | { kind: "scale"; at: Pt; sx: -1 | 0 | 1; sy: -1 | 0 | 1 }
+  | { kind: "end"; at: Pt; end: End };
+
 type Gesture =
-  | { kind: "move"; id: string; start: Pt; orig: Pt; moved: boolean }
-  | { kind: "rotate"; id: string; origAngle: number }
+  | { kind: "move"; start: Pt; orig: Originals; lead: string; moved: boolean; pick: string | null }
+  | { kind: "rotate"; center: Pt; from: number; orig: Originals; single: boolean }
+  | { kind: "scale"; frame: Frame; handle: Extract<Handle, { kind: "scale" }>; grab: Pt; orig: Originals; id: string | null }
+  | { kind: "end"; id: string; end: End; at: Pt }
+  | { kind: "marquee"; a: Pt; b: Pt; add: boolean }
   | { kind: "pan"; last: Pt }
   | { kind: "click"; at: Pt }
   | { kind: "line"; a: Pt; b: Pt }
@@ -33,6 +60,10 @@ const DEG = Math.PI / 180;
 /** How close (in screen pixels) a click must be to count as touching something. */
 const HIT_PIXELS = 6;
 const HANDLE_PIXELS = 26;
+/** How close (in screen pixels) a click must be to grab a handle. */
+const GRAB_PIXELS = 9;
+/** Space (in screen pixels) between a thing and its selection box. */
+const PAD_PIXELS = 5;
 
 /**
  * Turns pointer and keyboard input into changes to the level while the game is
@@ -43,9 +74,12 @@ export class Editor {
   readonly events = new EventBus<EditorEvents>();
   readonly history = new History();
   tool: ToolId = "select";
-  selectedId: string | null = null;
+  /** Ids of everything selected, in the order they were picked. */
+  selection: string[] = [];
   snapOn = true;
   grid = 0.25;
+  /** While true (Space held), drags pan the view and the editor stays out of the way. */
+  panKey = false;
 
   private gesture: Gesture | null = null;
   private pointerId: number | null = null;
@@ -68,9 +102,19 @@ export class Editor {
     return !this.game.started;
   }
 
+  /** The selected actor's id when exactly one thing is selected. */
+  get selectedId(): string | null {
+    return this.selection.length === 1 ? this.selection[0] : null;
+  }
+
+  /** The selected actor when exactly one thing is selected. */
   get selected(): Actor | null {
-    if (!this.selectedId) return null;
-    return this.game.find(this.selectedId) ?? null;
+    const id = this.selectedId;
+    return id ? (this.game.find(id) ?? null) : null;
+  }
+
+  get selectedActors(): Actor[] {
+    return this.selection.map((id) => this.game.find(id)).filter((a): a is Actor => !!a);
   }
 
   setTool(tool: ToolId): void {
@@ -81,8 +125,16 @@ export class Editor {
   }
 
   select(actor: Actor | null): void {
-    this.selectedId = actor?.id ?? null;
-    this.events.emit("selection", actor);
+    this.setSelection(actor ? [actor.id] : []);
+  }
+
+  setSelection(ids: string[]): void {
+    this.selection = [...new Set(ids)].filter((id) => this.game.find(id));
+    this.events.emit("selection", this.selected);
+  }
+
+  selectAll(): void {
+    this.setSelection(this.game.actors.filter((a) => !a.transient).map((a) => a.id));
   }
 
   // ---- Changes -----------------------------------------------------------
@@ -125,36 +177,77 @@ export class Editor {
   }
 
   deleteSelected(): void {
-    const actor = this.selected;
-    if (!actor || !this.enabled) return;
-    this.game.removeNow(actor);
+    const actors = this.selectedActors;
+    if (!actors.length || !this.enabled) return;
+    for (const actor of actors) this.game.removeNow(actor);
     this.select(null);
     this.commit();
   }
 
+  /**
+   * Copy everything selected, a little down and to the right. Parts that only
+   * hang off copied things come too, so copying a cart copies its wheels, and
+   * copied parts attach to the copies.
+   */
   duplicateSelected(): void {
-    const actor = this.selected;
-    if (!actor || !this.enabled) return;
-    const data = actor.serialize();
-    delete data.id;
-    data.x = tidy(data.x + 0.5);
-    data.y = tidy(data.y - 0.5);
-    this.create(data);
+    if (!this.selection.length || !this.enabled) return;
+    const ids = new Set(this.selectedActors.map((a) => a.id));
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const a of this.game.actors) {
+        if (ids.has(a.id) || a.transient || !(a instanceof Connector)) continue;
+        const targets = a.dependsOn();
+        if (targets.length && targets.every((t) => ids.has(t))) {
+          ids.add(a.id);
+          grew = true;
+        }
+      }
+    }
+    const originals = this.game.actors.filter((a) => ids.has(a.id)).sort((a, b) => (a.def.layer ?? 0) - (b.def.layer ?? 0));
+    const renamed = new Map<string, string>();
+    const made: string[] = [];
+    for (const actor of originals) {
+      const data = actor.serialize();
+      delete data.id;
+      data.x = tidy(data.x + 0.5);
+      data.y = tidy(data.y - 0.5);
+      if (actor instanceof Connector && data.props) {
+        for (const end of ["a", "b"] as const) {
+          const target = data.props[end] as string;
+          if (target && renamed.has(target)) data.props[end] = renamed.get(target)!;
+          else if (!target) this.moveWorldAnchor(data, end, (p) => ({ x: p.x + 0.5, y: p.y - 0.5 }));
+        }
+      }
+      const copy = this.game.add(data);
+      renamed.set(actor.id, copy.id);
+      made.push(copy.id);
+    }
+    this.commit();
+    this.setSelection(made);
   }
 
+  /** Turn the selection by `delta` radians: one thing about itself, several about their middle. */
   rotateSelected(delta: number): void {
-    if (!this.canTurn(this.selected)) return;
-    this.updateSelected((d) => {
-      d.angle = tidy((d.angle ?? 0) + delta, 4);
-    });
+    if (!this.enabled) return;
+    const single = this.selected;
+    if (single) {
+      if (!this.canTurn(single)) return;
+      this.updateSelected((d) => {
+        d.angle = tidy((d.angle ?? 0) + delta, 4);
+      });
+      return;
+    }
+    const bounds = this.selectionBounds();
+    if (!bounds) return;
+    const center = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+    this.transformGroup(this.capture(), { center, turn: delta });
+    this.commit();
   }
 
   nudgeSelected(dx: number, dy: number): void {
-    if (!this.canMove(this.selected)) return;
-    this.updateSelected((d) => {
-      d.x = tidy(d.x + dx);
-      d.y = tidy(d.y + dy);
-    });
+    if (!this.enabled || !this.movers().length) return;
+    this.transformGroup(this.capture(), { shift: { x: dx, y: dy } });
+    this.commit();
   }
 
   undo(): void {
@@ -168,10 +261,187 @@ export class Editor {
   }
 
   private restore(level: LevelData): void {
-    const keep = this.selectedId;
+    const keep = this.selection;
     this.game.load(level);
-    this.select(keep ? (this.game.find(keep) ?? null) : null);
+    this.setSelection(keep);
     this.events.emit("change", this.game.level);
+  }
+
+  // ---- Moving, turning and scaling many things ----------------------------
+
+  canMove(actor: Actor | null): boolean {
+    return !!actor && (actor.def.poseFields ?? ["x", "y", "angle"]).includes("x");
+  }
+
+  canTurn(actor: Actor | null): boolean {
+    return !!actor && (actor.def.poseFields ?? ["x", "y", "angle"]).includes("angle");
+  }
+
+  /** Selected things that have their own position. Parts on them follow along. */
+  private movers(): Actor[] {
+    return this.selectedActors.filter((a) => this.canMove(a));
+  }
+
+  /**
+   * Snapshot everything a move, turn or scale of the selection changes: the
+   * selection itself and every part attached to the things being moved.
+   */
+  private capture(): Originals {
+    const ids = new Set(this.selection);
+    for (const mover of this.movers()) {
+      for (const part of this.game.dependentsOf(mover.id)) ids.add(part.id);
+    }
+    const orig: Originals = new Map();
+    for (const actor of this.game.actors) if (ids.has(actor.id)) orig.set(actor.id, actor.serialize());
+    return orig;
+  }
+
+  /** Rebuild each captured actor from a changed copy of its original data, parents first. */
+  private rebuildFrom(orig: Originals, change: (data: ActorData, actor: Actor) => void): void {
+    const order = [...orig.values()].sort((a, b) => (getActorDef(a.type).layer ?? 0) - (getActorDef(b.type).layer ?? 0));
+    for (const original of order) {
+      const actor = this.game.find(original.id!);
+      if (!actor) continue;
+      const data = structuredClone(original);
+      change(data, actor);
+      this.game.replace(actor, data);
+    }
+  }
+
+  /**
+   * Move, turn (about `center`) and grow (about `center`) the selection from
+   * its captured state. Parts follow their bodies; ends of selected parts that
+   * are pinned to the world move with everything else.
+   */
+  private transformGroup(orig: Originals, t: { shift?: Pt; center?: Pt; turn?: number; grow?: number }): void {
+    const shift = t.shift ?? { x: 0, y: 0 };
+    const center = t.center ?? { x: 0, y: 0 };
+    const turn = t.turn ?? 0;
+    const grow = t.grow ?? 1;
+    const cos = Math.cos(turn);
+    const sin = Math.sin(turn);
+    const point = (p: Pt): Pt => {
+      const dx = (p.x - center.x) * grow;
+      const dy = (p.y - center.y) * grow;
+      return { x: center.x + dx * cos - dy * sin + shift.x, y: center.y + dx * sin + dy * cos + shift.y };
+    };
+    const selected = new Set(this.selection);
+    const movers = new Set(this.movers().map((a) => a.id));
+    this.rebuildFrom(orig, (data, actor) => {
+      const def = actor.def;
+      if (movers.has(actor.id)) {
+        const p = point(data);
+        data.x = tidy(p.x);
+        data.y = tidy(p.y);
+        if (turn && this.canTurn(actor)) data.angle = tidy((data.angle ?? 0) + turn, 4);
+        if (grow !== 1 && data.props) scaleProps(def, data, grow, grow);
+      }
+      if (actor instanceof Connector && data.props) {
+        for (const end of ["a", "b"] as const) {
+          const target = data.props[end] as string;
+          if (!target && selected.has(actor.id)) this.moveWorldAnchor(data, end, point);
+          else if (movers.has(target) && grow !== 1) scaleAnchor(data, end, grow, grow);
+        }
+        if (selected.has(actor.id) && grow !== 1) scaleProps(def, data, grow, grow);
+      }
+    });
+  }
+
+  /** Change the world point a part's end is pinned to. */
+  private moveWorldAnchor(data: ActorData, end: "a" | "b", move: (p: Pt) => Pt): void {
+    const props = data.props!;
+    const p = move({ x: Number(props[`${end}x`] ?? 0), y: Number(props[`${end}y`] ?? 0) });
+    props[`${end}x`] = tidy(p.x);
+    props[`${end}y`] = tidy(p.y);
+  }
+
+  selectionBounds(): Bounds | null {
+    let bounds: Bounds | null = null;
+    for (const actor of this.selectedActors) {
+      const b = actor.getBounds();
+      if (b) bounds = unionBounds(bounds, b);
+    }
+    return bounds;
+  }
+
+  // ---- Handles -------------------------------------------------------------
+
+  /** The box the scale handles sit on, or null if the selection can't be scaled. */
+  private scaleFrame(): Frame | null {
+    const single = this.selected;
+    if (single) {
+      const box = single.def.scale ? single.localBounds() : null;
+      if (!box || !single.body) return null;
+      const p = single.body.getPosition();
+      return { x: p.x, y: p.y, angle: single.body.getAngle(), box };
+    }
+    if (this.selection.length < 2 || !this.movers().length) return null;
+    const box = this.selectionBounds();
+    return box ? { x: 0, y: 0, angle: 0, box } : null;
+  }
+
+  private handles(): Handle[] {
+    if (!this.selection.length) return [];
+    const zoom = this.camera.zoom;
+    const pad = PAD_PIXELS / zoom;
+    const list: Handle[] = [];
+    const single = this.selected;
+
+    if (single instanceof Connector) {
+      const placement = single.def.placement;
+      if (placement === "connect") {
+        list.push({ kind: "end", at: single.worldA(), end: "a" }, { kind: "end", at: single.worldB(), end: "b" });
+      } else if (placement === "attach") {
+        list.push({ kind: "end", at: single.worldA(), end: "a" });
+      } else if (placement === "pin") {
+        list.push({ kind: "end", at: single.worldA(), end: "pin" });
+      }
+    }
+
+    const frame = this.scaleFrame();
+    if (frame) {
+      const uniform = single ? single.def.scale?.axes === "uniform" : true;
+      const b = frame.box;
+      // On a thin thing like a ramp, the corners crowd together, so it gets edge handles only.
+      const thinX = (b.maxX - b.minX) * zoom < 20;
+      const thinY = (b.maxY - b.minY) * zoom < 20;
+      for (const sx of [-1, 0, 1] as const) {
+        for (const sy of [-1, 0, 1] as const) {
+          if (sx === 0 && sy === 0) continue;
+          const edge = sx === 0 || sy === 0;
+          // Middle-of-edge handles stretch one way only, so shapes that keep their proportions don't get them.
+          if (edge && (uniform || (thinX && thinY))) continue;
+          if (!edge && !uniform && thinX !== thinY) continue;
+          const local = {
+            x: sx < 0 ? b.minX - pad : sx > 0 ? b.maxX + pad : (b.minX + b.maxX) / 2,
+            y: sy < 0 ? b.minY - pad : sy > 0 ? b.maxY + pad : (b.minY + b.maxY) / 2,
+          };
+          list.push({ kind: "scale", at: toWorld(frame, local), sx, sy });
+        }
+      }
+    }
+
+    const rotate = this.rotateHandle();
+    if (rotate) list.push({ kind: "rotate", at: rotate });
+    return list;
+  }
+
+  private rotateHandle(): Pt | null {
+    const single = this.selected;
+    if (single && !this.canTurn(single)) return null;
+    if (!single && !this.movers().some((a) => this.canTurn(a))) return null;
+    const b = single ? single.getBounds() : this.selectionBounds();
+    if (!b) return null;
+    const x = single ? single.x : (b.minX + b.maxX) / 2;
+    return { x, y: b.maxY + HANDLE_PIXELS / this.camera.zoom };
+  }
+
+  private handleAt(p: Pt): Handle | null {
+    const reach = GRAB_PIXELS / this.camera.zoom;
+    for (const h of this.handles()) {
+      if (Math.hypot(p.x - h.at.x, p.y - h.at.y) <= reach) return h;
+    }
+    return null;
   }
 
   // ---- Keyboard ----------------------------------------------------------
@@ -194,16 +464,22 @@ export class Editor {
       this.duplicateSelected();
       return true;
     }
+    if (mod && key === "a") {
+      this.selectAll();
+      return true;
+    }
     if (mod) return false;
     const step = e.shiftKey ? 1 : 15;
     const nudge = e.shiftKey ? 0.05 : this.snapOn ? this.grid : 0.1;
+    const any = this.selection.length > 0;
     switch (e.key) {
       case "Delete":
       case "Backspace":
         this.deleteSelected();
         return true;
       case "Escape":
-        if (this.tool !== "select") this.setTool("select");
+        if (this.gesture) this.cancelGesture();
+        else if (this.tool !== "select") this.setTool("select");
         else this.select(null);
         return true;
       case "q":
@@ -221,16 +497,16 @@ export class Editor {
         return true;
       case "ArrowLeft":
         this.nudgeSelected(-nudge, 0);
-        return !!this.selected;
+        return any;
       case "ArrowRight":
         this.nudgeSelected(nudge, 0);
-        return !!this.selected;
+        return any;
       case "ArrowUp":
         this.nudgeSelected(0, nudge);
-        return !!this.selected;
+        return any;
       case "ArrowDown":
         this.nudgeSelected(0, -nudge);
-        return !!this.selected;
+        return any;
     }
     return false;
   }
@@ -271,23 +547,8 @@ export class Editor {
       .reverse();
   }
 
-  canMove(actor: Actor | null): boolean {
-    return !!actor && (actor.def.poseFields ?? ["x", "y", "angle"]).includes("x");
-  }
-
-  canTurn(actor: Actor | null): boolean {
-    return !!actor && (actor.def.poseFields ?? ["x", "y", "angle"]).includes("angle");
-  }
-
-  private handlePosition(actor: Actor): Pt | null {
-    if (!this.canTurn(actor)) return null;
-    const b = actor.getBounds();
-    if (!b) return null;
-    return { x: actor.x, y: b.maxY + HANDLE_PIXELS / this.camera.zoom };
-  }
-
   private onPointerDown(e: PointerEvent): void {
-    if (!this.enabled) return;
+    if (!this.enabled || this.panKey) return;
     if (this.pointerId !== null) {
       // A second finger means pinch-zoom, so drop whatever the first started.
       this.cancelGesture();
@@ -299,22 +560,7 @@ export class Editor {
     this.canvas.setPointerCapture(e.pointerId);
 
     if (this.tool === "select") {
-      const sel = this.selected;
-      const handle = sel ? this.handlePosition(sel) : null;
-      if (sel && handle && Math.hypot(p.x - handle.x, p.y - handle.y) * this.camera.zoom < 10) {
-        this.gesture = { kind: "rotate", id: sel.id, origAngle: sel.angle };
-        return;
-      }
-      const hit = this.actorAt(p);
-      if (hit) {
-        this.select(hit);
-        this.gesture = this.canMove(hit)
-          ? { kind: "move", id: hit.id, start: p, orig: { x: hit.x, y: hit.y }, moved: false }
-          : null;
-      } else {
-        this.select(null);
-        this.gesture = { kind: "pan", last: this.screen(e) };
-      }
+      this.gesture = this.startSelectGesture(e, p);
       return;
     }
 
@@ -343,33 +589,85 @@ export class Editor {
     }
   }
 
+  private startSelectGesture(e: PointerEvent, p: Pt): Gesture | null {
+    const handle = this.handleAt(p);
+    if (handle?.kind === "end") return { kind: "end", id: this.selection[0], end: handle.end, at: p };
+    if (handle?.kind === "rotate") {
+      const single = this.selected;
+      const b = this.selectionBounds()!;
+      const center = single ? { x: single.x, y: single.y } : { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
+      return { kind: "rotate", center, from: Math.atan2(p.y - center.y, p.x - center.x), orig: this.capture(), single: !!single };
+    }
+    if (handle?.kind === "scale") {
+      const frame = this.scaleFrame()!;
+      return { kind: "scale", frame, handle, grab: toLocal(frame, p), orig: this.capture(), id: this.selectedId };
+    }
+
+    const hit = this.actorAt(p);
+    if (!hit) {
+      if (e.pointerType === "touch") return { kind: "pan", last: this.screen(e) };
+      if (!e.shiftKey) this.select(null);
+      return { kind: "marquee", a: p, b: p, add: e.shiftKey };
+    }
+    if (e.shiftKey) {
+      const has = this.selection.includes(hit.id);
+      this.setSelection(has ? this.selection.filter((id) => id !== hit.id) : [...this.selection, hit.id]);
+      return null;
+    }
+    const inGroup = this.selection.length > 1 && this.selection.includes(hit.id);
+    if (!inGroup) this.select(hit);
+    // Dragging a part that's bolted on moves where it's bolted.
+    if (!inGroup && hit instanceof Connector) {
+      const placement = hit.def.placement;
+      if (placement === "attach") return { kind: "end", id: hit.id, end: "a", at: p };
+      if (placement === "pin") return { kind: "end", id: hit.id, end: "pin", at: p };
+    }
+    if (!this.movers().length) return null;
+    const lead = this.canMove(hit) ? hit : this.movers()[0];
+    return { kind: "move", start: p, orig: this.capture(), lead: lead.id, moved: false, pick: inGroup ? hit.id : null };
+  }
+
   private onPointerMove(e: PointerEvent): void {
     if (e.pointerId !== this.pointerId || !this.gesture) return;
     const g = this.gesture;
     const p = this.world(e);
     switch (g.kind) {
       case "move": {
-        const actor = this.game.find(g.id);
-        if (!actor) return;
-        const target = this.snapPt({ x: g.orig.x + p.x - g.start.x, y: g.orig.y + p.y - g.start.y });
-        if (target.x !== actor.x || target.y !== actor.y) {
-          g.moved = true;
-          actor.setPose(target.x, target.y);
-          this.game.rebuildDependents(actor);
-        }
+        const lead = g.orig.get(g.lead)!;
+        // Snap the thing that was grabbed, and move everything else by the same amount.
+        const target = this.snapPt({ x: lead.x + p.x - g.start.x, y: lead.y + p.y - g.start.y });
+        const shift = { x: target.x - lead.x, y: target.y - lead.y };
+        const current = this.game.find(g.lead);
+        if (!current || (current.x === target.x && current.y === target.y)) break;
+        if (!g.moved && Math.hypot(p.x - g.start.x, p.y - g.start.y) * this.camera.zoom < 3) break;
+        g.moved = true;
+        this.transformGroup(g.orig, { shift });
         break;
       }
       case "rotate": {
-        const actor = this.game.find(g.id);
-        if (!actor) return;
-        let angle = Math.atan2(p.y - actor.y, p.x - actor.x) - Math.PI / 2;
-        // A part's angle is measured on the thing it's attached to.
-        if (actor instanceof Connector) angle -= actor.bodyA.getAngle();
-        if (this.snapOn && !e.shiftKey) angle = Math.round(angle / (15 * DEG)) * 15 * DEG;
-        actor.setPose(actor.x, actor.y, tidy(angle, 4));
-        this.game.rebuildDependents(actor);
+        let turn = Math.atan2(p.y - g.center.y, p.x - g.center.x) - g.from;
+        const snapTurn = this.snapOn && !e.shiftKey;
+        if (g.single) {
+          const data = [...g.orig.values()].find((d) => d.id === this.selectedId)!;
+          let angle = (data.angle ?? 0) + turn;
+          if (snapTurn) angle = Math.round(angle / (15 * DEG)) * 15 * DEG;
+          const actor = this.game.find(data.id!);
+          if (actor) this.game.replace(actor, { ...structuredClone(data), angle: tidy(wrap(angle), 4) });
+        } else {
+          if (snapTurn) turn = Math.round(turn / (15 * DEG)) * 15 * DEG;
+          this.transformGroup(g.orig, { center: g.center, turn });
+        }
         break;
       }
+      case "scale":
+        this.dragScale(g, p, e.shiftKey);
+        break;
+      case "end":
+        g.at = this.bodiesAt(p).length ? p : this.snapPt(p);
+        break;
+      case "marquee":
+        g.b = p;
+        break;
       case "pan": {
         const s = this.screen(e);
         this.camera.panBy(s.x - g.last.x, s.y - g.last.y);
@@ -402,10 +700,18 @@ export class Editor {
     if (!g) return;
     switch (g.kind) {
       case "move":
-        if (g.moved) this.commitPose(g.id);
+        if (g.moved) this.finishTransform();
+        else if (g.pick) this.setSelection([g.pick]);
         break;
       case "rotate":
-        this.commitPose(g.id);
+      case "scale":
+        this.finishTransform();
+        break;
+      case "end":
+        this.finishEnd(g.id, g.end, g.at);
+        break;
+      case "marquee":
+        this.finishMarquee(g.a, g.b, g.add);
         break;
       case "click": {
         const placement = getActorDef(this.placingType()).placement ?? "click";
@@ -428,13 +734,134 @@ export class Editor {
     }
   }
 
-  /** Rebuild after a drag so the change is saved and undoable. */
-  private commitPose(id: string): void {
-    const actor = this.game.find(id);
-    if (!actor) return;
-    const next = this.game.replace(actor, actor.serialize());
+  /** Save a drag so it's undoable, and refresh the panel for the rebuilt actors. */
+  private finishTransform(): void {
     this.commit();
-    this.events.emit("selection", next);
+    this.events.emit("selection", this.selected);
+  }
+
+  /**
+   * Stretch from a scale handle. The opposite side stays put. One thing
+   * stretches along its own turned axes; a group grows evenly.
+   */
+  private dragScale(g: Extract<Gesture, { kind: "scale" }>, p: Pt, keepShape: boolean): void {
+    const { frame, handle } = g;
+    const b = frame.box;
+    // Measure from the box's edge, not from where on the handle it was grabbed.
+    const edge = {
+      x: handle.sx > 0 ? b.maxX : handle.sx < 0 ? b.minX : 0,
+      y: handle.sy > 0 ? b.maxY : handle.sy < 0 ? b.minY : 0,
+    };
+    const local = toLocal(frame, p);
+    const q = {
+      x: local.x - (handle.sx ? g.grab.x - edge.x : 0),
+      y: local.y - (handle.sy ? g.grab.y - edge.y : 0),
+    };
+    const single = g.id ? this.game.find(g.id) : null;
+    const def = single?.def;
+    // A part (like a wheel) grows about its own middle; everything else about the opposite side.
+    const aboutMiddle = single instanceof Connector;
+    const fixed = {
+      x: aboutMiddle ? 0 : handle.sx > 0 ? b.minX : handle.sx < 0 ? b.maxX : 0,
+      y: aboutMiddle ? 0 : handle.sy > 0 ? b.minY : handle.sy < 0 ? b.maxY : 0,
+    };
+    const corner = { x: handle.sx > 0 ? b.maxX : b.minX, y: handle.sy > 0 ? b.maxY : b.minY };
+    let sx = 1;
+    let sy = 1;
+    const uniform = !single || def?.scale?.axes === "uniform" || (keepShape && handle.sx !== 0 && handle.sy !== 0);
+    if (uniform) {
+      const dx = corner.x - fixed.x;
+      const dy = corner.y - fixed.y;
+      const s = ((q.x - fixed.x) * dx + (q.y - fixed.y) * dy) / (dx * dx + dy * dy || 1);
+      sx = sy = Math.max(0.05, s);
+    } else {
+      const stretch = (side: number, lo: number, hi: number, at: number, from: number) => {
+        if (side === 0) return 1;
+        let size = (at - from) * side;
+        if (this.snapOn) size = snap(size, this.grid);
+        return Math.max(Math.min(this.grid, hi - lo) / 2, size) / (hi - lo || 1);
+      };
+      sx = stretch(handle.sx, b.minX, b.maxX, q.x, fixed.x);
+      sy = stretch(handle.sy, b.minY, b.maxY, q.y, fixed.y);
+    }
+
+    if (!single) {
+      const center = toWorld(frame, fixed);
+      this.transformGroup(g.orig, { center, grow: sx });
+      return;
+    }
+    // Growing about the actor's own origin moves the fixed side, so shift it back.
+    const back = toWorld({ ...frame, x: 0, y: 0 }, { x: fixed.x * (1 - sx), y: fixed.y * (1 - sy) });
+    this.rebuildFrom(g.orig, (data, actor) => {
+      if (actor.id === single.id) {
+        if (!aboutMiddle) {
+          data.x = tidy(data.x + back.x);
+          data.y = tidy(data.y + back.y);
+        }
+        scaleProps(actor.def, data, sx, sy);
+      } else if (actor instanceof Connector && data.props) {
+        // Parts bolted to it stay at the same spot on it.
+        for (const end of ["a", "b"] as const) if (data.props[end] === single.id) scaleAnchor(data, end, sx, sy);
+      }
+    });
+  }
+
+  /** Box select: everything that fits inside the box. */
+  private finishMarquee(a: Pt, b: Pt, add: boolean): void {
+    const box = { minX: Math.min(a.x, b.x), minY: Math.min(a.y, b.y), maxX: Math.max(a.x, b.x), maxY: Math.max(a.y, b.y) };
+    if ((box.maxX - box.minX) * this.camera.zoom < 4 && (box.maxY - box.minY) * this.camera.zoom < 4) return;
+    const inside = this.game.actors
+      .filter((actor) => {
+        const bb = actor.transient ? null : actor.getBounds();
+        return !!bb && bb.minX >= box.minX && bb.maxX <= box.maxX && bb.minY >= box.minY && bb.maxY <= box.maxY;
+      })
+      .map((actor) => actor.id);
+    this.setSelection(add ? [...this.selection, ...inside] : inside);
+  }
+
+  /** Things a part's end could attach to at a point: not itself, and nothing that hangs off it. */
+  private targetsAt(part: Actor, p: Pt): Actor[] {
+    const off = new Set([part.id]);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const a of this.game.actors) {
+        if (!off.has(a.id) && a.dependsOn().some((id) => off.has(id))) {
+          off.add(a.id);
+          grew = true;
+        }
+      }
+    }
+    return this.bodiesAt(p).filter((a) => !off.has(a.id));
+  }
+
+  /** Drop a dragged part end: it attaches to whatever is under it now, or to the world. */
+  private finishEnd(id: string, end: End, p: Pt): void {
+    const part = this.game.find(id);
+    if (!(part instanceof Connector)) return;
+    const props = part.props;
+    const targets = this.targetsAt(part, p);
+    this.updateSelected((d) => {
+      const next = d.props!;
+      if (end === "pin") {
+        // A hinge keeps joining the same things, at the new spot.
+        const a = this.game.find(props.a);
+        const b = this.game.find(props.b);
+        const onA = a && targets.includes(a) ? a : targets[0];
+        const onB = b && targets.includes(b) && b !== onA ? b : targets.find((t) => t !== onA);
+        const anchorA = this.anchorOn(onA, p);
+        const anchorB = this.anchorOn(onB, p);
+        Object.assign(next, { a: onA?.id ?? "", b: onB?.id ?? "", ax: anchorA.x, ay: anchorA.y, bx: anchorB.x, by: anchorB.y });
+        return;
+      }
+      const other = end === "a" ? props.b : props.a;
+      const current = this.game.find(props[end]);
+      // Stay on the same thing if it's still under the pointer; never join a part's two ends to one thing.
+      const target = current && targets.includes(current) ? current : targets.find((t) => !other || t.id !== other);
+      const anchor = this.anchorOn(target, p);
+      next[end] = target?.id ?? "";
+      next[`${end}x`] = anchor.x;
+      next[`${end}y`] = anchor.y;
+    });
   }
 
   private finishLine(a: Pt, b: Pt): void {
@@ -528,14 +955,10 @@ export class Editor {
 
   private cancelGesture(): void {
     const g = this.gesture;
-    if (g && (g.kind === "move" || g.kind === "rotate")) {
-      // Put it back where it was.
-      const actor = this.game.find(g.id);
-      if (actor) {
-        if (g.kind === "move") actor.setPose(g.orig.x, g.orig.y);
-        else actor.setPose(actor.x, actor.y, g.origAngle);
-        this.game.rebuildDependents(actor);
-      }
+    if (g && (g.kind === "move" || g.kind === "rotate" || g.kind === "scale")) {
+      // Put everything back where it was.
+      this.rebuildFrom(g.orig, () => {});
+      this.events.emit("selection", this.selected);
     }
     this.gesture = null;
     this.pointerId = null;
@@ -547,34 +970,95 @@ export class Editor {
     if (!this.enabled) return;
     const { ctx } = r;
     const px = r.px;
+    const pad = PAD_PIXELS * px;
+    const blue = "#2563eb";
 
-    const sel = this.selected;
-    if (sel) {
-      const b = sel.getBounds();
+    const actors = this.selectedActors;
+    ctx.lineWidth = 1.5 * px;
+    ctx.strokeStyle = blue;
+    ctx.setLineDash([5 * px, 4 * px]);
+    for (const actor of actors) {
+      const b = actor.getBounds();
+      if (b) ctx.strokeRect(b.minX - pad, b.minY - pad, b.maxX - b.minX + 2 * pad, b.maxY - b.minY + 2 * pad);
+    }
+    ctx.setLineDash([]);
+
+    // The box the handles sit on: the actor's own turned box, or one around the whole group.
+    const frame = this.scaleFrame();
+    if (frame) {
+      const b = frame.box;
+      const corners = [
+        { x: b.minX - pad, y: b.minY - pad },
+        { x: b.maxX + pad, y: b.minY - pad },
+        { x: b.maxX + pad, y: b.maxY + pad },
+        { x: b.minX - pad, y: b.maxY + pad },
+      ].map((c) => toWorld(frame, c));
+      ctx.beginPath();
+      corners.forEach((c, i) => (i ? ctx.lineTo(c.x, c.y) : ctx.moveTo(c.x, c.y)));
+      ctx.closePath();
+      ctx.lineWidth = px;
+      ctx.stroke();
+    }
+
+    const rotate = this.rotateHandle();
+    if (rotate) {
+      const b = (this.selected ?? null)?.getBounds() ?? this.selectionBounds();
       if (b) {
-        const pad = 4 * px;
-        ctx.setLineDash([5 * px, 4 * px]);
         ctx.lineWidth = 1.5 * px;
-        ctx.strokeStyle = "#2563eb";
-        ctx.strokeRect(b.minX - pad, b.minY - pad, b.maxX - b.minX + 2 * pad, b.maxY - b.minY + 2 * pad);
-        ctx.setLineDash([]);
-        const h = this.handlePosition(sel);
-        if (h) {
-          ctx.beginPath();
-          ctx.moveTo(h.x, b.maxY + pad);
-          ctx.lineTo(h.x, h.y);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(h.x, h.y, 6 * px, 0, Math.PI * 2);
-          ctx.fillStyle = "#fff";
-          ctx.fill();
-          ctx.stroke();
-        }
+        ctx.beginPath();
+        ctx.moveTo(rotate.x, b.maxY + pad);
+        ctx.lineTo(rotate.x, rotate.y);
+        ctx.stroke();
       }
+    }
+    for (const h of this.handles()) {
+      ctx.lineWidth = 1.5 * px;
+      ctx.strokeStyle = blue;
+      ctx.beginPath();
+      if (h.kind === "scale") {
+        const s = 4 * px;
+        ctx.rect(h.at.x - s, h.at.y - s, 2 * s, 2 * s);
+        ctx.fillStyle = "#fff";
+      } else if (h.kind === "rotate") {
+        ctx.arc(h.at.x, h.at.y, 6 * px, 0, Math.PI * 2);
+        ctx.fillStyle = "#fff";
+      } else {
+        ctx.arc(h.at.x, h.at.y, 5 * px, 0, Math.PI * 2);
+        ctx.fillStyle = "#f97316";
+        ctx.strokeStyle = "#9a3412";
+      }
+      ctx.fill();
+      ctx.stroke();
     }
 
     const g = this.gesture;
-    if (g?.kind === "line") {
+    if (g?.kind === "marquee") {
+      ctx.fillStyle = "rgba(37,99,235,0.08)";
+      ctx.fillRect(Math.min(g.a.x, g.b.x), Math.min(g.a.y, g.b.y), Math.abs(g.b.x - g.a.x), Math.abs(g.b.y - g.a.y));
+      ctx.lineWidth = px;
+      ctx.strokeStyle = blue;
+      ctx.strokeRect(Math.min(g.a.x, g.b.x), Math.min(g.a.y, g.b.y), Math.abs(g.b.x - g.a.x), Math.abs(g.b.y - g.a.y));
+    } else if (g?.kind === "end") {
+      const part = this.game.find(g.id);
+      if (part instanceof Connector) {
+        const from = g.end === "a" && part.def.placement === "connect" ? part.worldB() : g.end === "b" ? part.worldA() : null;
+        ctx.setLineDash([6 * px, 4 * px]);
+        ctx.lineWidth = 2 * px;
+        ctx.strokeStyle = "#f97316";
+        if (from) {
+          ctx.beginPath();
+          ctx.moveTo(from.x, from.y);
+          ctx.lineTo(g.at.x, g.at.y);
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(g.at.x, g.at.y, 5 * px, 0, Math.PI * 2);
+        ctx.fillStyle = this.targetsAt(part, g.at).length ? "#f97316" : "#fff";
+        ctx.fill();
+        ctx.stroke();
+      }
+    } else if (g?.kind === "line") {
       const def = getActorDef(this.placingType());
       const thickness = Number(def.props.find((f) => f.key === "height")?.default ?? 0.3);
       ctx.lineWidth = thickness;
@@ -586,12 +1070,12 @@ export class Editor {
       ctx.stroke();
       const length = Math.hypot(g.b.x - g.a.x, g.b.y - g.a.y);
       if (length > 0.2) {
-        r.drawLabel(`${length.toFixed(2)} m`, (g.a.x + g.b.x) / 2, (g.a.y + g.b.y) / 2 + 18 * px, "#2563eb", 12);
+        r.drawLabel(`${length.toFixed(2)} m`, (g.a.x + g.b.x) / 2, (g.a.y + g.b.y) / 2 + 18 * px, blue, 12);
       }
     } else if (g?.kind === "connect") {
       ctx.setLineDash([6 * px, 4 * px]);
       ctx.lineWidth = 2 * px;
-      ctx.strokeStyle = "#2563eb";
+      ctx.strokeStyle = blue;
       ctx.beginPath();
       ctx.moveTo(g.a.x, g.a.y);
       ctx.lineTo(g.b.x, g.b.y);
@@ -600,7 +1084,7 @@ export class Editor {
       for (const end of [g.a, g.b]) {
         ctx.beginPath();
         ctx.arc(end.x, end.y, 4 * px, 0, Math.PI * 2);
-        ctx.fillStyle = this.bodiesAt(end).length ? "#2563eb" : "#fff";
+        ctx.fillStyle = this.bodiesAt(end).length ? blue : "#fff";
         ctx.fill();
         ctx.stroke();
       }
@@ -614,4 +1098,43 @@ export class Editor {
       ctx.stroke();
     }
   }
+}
+
+function toWorld(f: Pick<Frame, "x" | "y" | "angle">, p: Pt): Pt {
+  const c = Math.cos(f.angle);
+  const s = Math.sin(f.angle);
+  return { x: f.x + p.x * c - p.y * s, y: f.y + p.x * s + p.y * c };
+}
+
+function toLocal(f: Frame, p: Pt): Pt {
+  const c = Math.cos(f.angle);
+  const s = Math.sin(f.angle);
+  const dx = p.x - f.x;
+  const dy = p.y - f.y;
+  return { x: dx * c + dy * s, y: -dx * s + dy * c };
+}
+
+function wrap(angle: number): number {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
+}
+
+/** Resize an actor's props with its type's scale rule, kept within each setting's limits. */
+function scaleProps(def: ActorDef, data: ActorData, sx: number, sy: number): void {
+  if (!def.scale || !data.props) return;
+  const props = { ...Object.fromEntries(def.props.map((f) => [f.key, f.default])), ...data.props };
+  def.scale.apply(props, sx, sy);
+  for (const field of def.props) {
+    const v = props[field.key];
+    if (field.kind !== "number" || typeof v !== "number") continue;
+    if (field.min !== undefined && v < field.min) props[field.key] = field.min;
+    if (field.max !== undefined && v > field.max) props[field.key] = field.max;
+  }
+  data.props = props;
+}
+
+/** Keep a part's end at the same spot on a body that was resized. */
+function scaleAnchor(data: ActorData, end: "a" | "b", sx: number, sy: number): void {
+  const props = data.props!;
+  props[`${end}x`] = tidy(Number(props[`${end}x`] ?? 0) * sx);
+  props[`${end}y`] = tidy(Number(props[`${end}y`] ?? 0) * sy);
 }

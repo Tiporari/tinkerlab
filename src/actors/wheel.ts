@@ -4,6 +4,7 @@ import { Connector, connectorFields, type ConnectorProps } from "../core/Connect
 import { colorField, controlField, reverseField } from "../core/fields";
 import type { Renderer } from "../core/Renderer";
 import type { ActorDef } from "../core/registry";
+import { scaleUniform } from "../core/scaling";
 
 interface WheelProps extends ConnectorProps {
   radius: number;
@@ -99,6 +100,7 @@ const wheel: ActorDef = {
   placement: "attach",
   layer: 1,
   poseFields: [],
+  scale: scaleUniform("radius"),
   props: [
     ...connectorFields(),
     { key: "radius", label: "Radius", kind: "number", default: 0.45, min: 0.05, max: 5, step: 0.05 },

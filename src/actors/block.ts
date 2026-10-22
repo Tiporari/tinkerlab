@@ -3,6 +3,7 @@ import { Actor } from "../core/Actor";
 import { colorField, dynamicField, materialFields } from "../core/fields";
 import { addOutline, hollowFields, rectangle } from "../core/shapes";
 import type { ActorDef } from "../core/registry";
+import { scaleBox } from "../core/scaling";
 
 interface BlockProps extends Record<string, number | string | boolean> {
   width: number;
@@ -40,6 +41,7 @@ const block: ActorDef = {
   icon: "▬",
   placement: "drag-line",
   description: "A rectangle. Drag to draw a ramp or wall.",
+  scale: scaleBox(),
   props: [
     { key: "width", label: "Width", kind: "number", default: 4, min: 0.05, max: 200, step: 0.1 },
     { key: "height", label: "Height", kind: "number", default: 0.3, min: 0.05, max: 200, step: 0.1 },

@@ -1,4 +1,4 @@
-import { Vec2, type Body, type Contact } from "planck";
+import { AABB, Transform, Vec2, type Body, type Contact } from "planck";
 import type { Game } from "./Game";
 import type { Renderer } from "./Renderer";
 import { getActorDef, resolveProps, type ActorDef } from "./registry";
@@ -117,6 +117,29 @@ export abstract class Actor<P extends Props = Props> {
           minY: aabb.lowerBound.y,
           maxX: aabb.upperBound.x,
           maxY: aabb.upperBound.y,
+        });
+      }
+    }
+    return bounds;
+  }
+
+  /** Box around the actor in its body's own frame, as if it weren't turned. Used for scale handles. */
+  localBounds(): Bounds | null {
+    if (!this.body) return null;
+    const identity = Transform.identity();
+    const aabb = new AABB();
+    let bounds: Bounds | null = null;
+    for (let f = this.body.getFixtureList(); f; f = f.getNext()) {
+      const shape = f.getShape();
+      for (let i = 0; i < shape.getChildCount(); i++) {
+        shape.computeAABB(aabb, identity, i);
+        // Polygons carry a thin skin; leave it out so a 2 m block measures 2 m.
+        const skin = shape.getType() === "circle" ? 0 : shape.getRadius();
+        bounds = unionBounds(bounds, {
+          minX: aabb.lowerBound.x + skin,
+          minY: aabb.lowerBound.y + skin,
+          maxX: aabb.upperBound.x - skin,
+          maxY: aabb.upperBound.y - skin,
         });
       }
     }

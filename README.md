@@ -35,13 +35,17 @@ The game has two modes. In **build** mode you edit the level; press **Play**
 | Add a triangle, hexagon or other shape | pick **Polygon** (or its ▲ / ⬢ preset), then click; change **Sides** for 3 to 12 |
 | Make a hollow outline | tick **Hollow** on a block, ball or shape; **Wall** sets how thick |
 | Select, move | **Select** tool, click or drag a thing |
+| Select several | drag a box around them, or **Shift**+click to add or remove one; **Ctrl+A** selects everything |
+| Move or turn several | drag any of them, or use the round handle, arrow keys or **Q** / **E** |
+| Resize | drag the square handles: an edge stretches one way, a corner both (hold Shift to keep the shape) |
+| Move or re-attach a part | drag a wheel or thruster, or a spring, rope or piston's orange end, onto something else |
 | Rotate | drag the round handle above it, or **Q** / **E** (hold Shift for 1°) |
 | Nudge | arrow keys |
 | Change its settings | use the panel on the right |
 | Duplicate / delete | **Ctrl+D** / **Delete** |
 | Undo / redo | **Ctrl+Z** / **Ctrl+Y** |
 | Snap to grid on or off | **G**, or the Snap box |
-| Pan | drag empty space, or right/middle-drag; two fingers on touch |
+| Pan | right/middle-drag, or hold **Space** and drag; one finger on touch |
 | Zoom | scroll wheel or pinch |
 
 ### Machine parts
@@ -157,6 +161,7 @@ Optional `ActorDef` fields for the editor:
 | `icon` | a symbol or emoji for the palette button |
 | `placement` | `"click"` (default) drops it where you click; `"drag-line"` lets you drag it out, setting `width` and `angle`; `"draw-path"` lets you draw it, setting `points` |
 | `palette: false` | hides it from the palette |
+| `scale` | lets the select tool's handles resize it; `scaleBox()`, `scaleUniform("radius")` and `scalePoints()` in `core/scaling.ts` cover most shapes |
 | `variants` | extra palette buttons that place it with preset settings, like the Triangle and Hexagon shapes |
 
 Actors can also override these hooks:
@@ -216,7 +221,7 @@ actor type's default.
 2. **Basic editor**: draw and drag objects, edit their settings, build and play modes (done)
 3. **Machine parts and controls**: springs, ropes, motor wheels, pistons, muscles, thrusters, keyboard and slider controls (done)
 4. **More shapes, hazards and gyros**: polygons and hollow outlines, palette presets, hazard zones, PID gyros (done)
-5. **A better select tool**: box select, multi-select, scale handles, dragging part ends
+5. **A better select tool**: box select, multi-select, scale handles, dragging part ends (done)
 6. **Groups and assemblies**: weld shapes into one, or group a machine; save them to an inventory
 7. **Images, scripting and bigger worlds**: image import with masking, gravity direction, script nodes
 
