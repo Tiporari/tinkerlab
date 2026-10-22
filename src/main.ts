@@ -214,6 +214,36 @@ window.addEventListener("blur", () => {
 
 // ---- Files -------------------------------------------------------------------
 
+// Drop a picture (or anything else an actor can be made from) onto the level to add it there.
+canvas.addEventListener("dragover", (e) => {
+  if (e.dataTransfer?.types.includes("Files")) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }
+});
+canvas.addEventListener("drop", async (e) => {
+  const files = [...(e.dataTransfer?.files ?? [])];
+  if (!files.length) return;
+  e.preventDefault();
+  if (game.started) stop();
+  const rect = canvas.getBoundingClientRect();
+  const [x, y] = camera.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+  for (const [i, file] of files.entries()) {
+    try {
+      // A level file dropped here opens like Open file does.
+      if (file.name.endsWith(".json")) {
+        const level = JSON.parse(await file.text()) as LevelData;
+        if (level.format === "tinkerlab/level" && confirmReplace()) openLevel(level);
+        continue;
+      }
+      await editor.importFile(file, { x: x + i, y: y - i });
+    } catch (err) {
+      console.error(err);
+      window.alert(`Could not use ${file.name}: ${(err as Error).message}`);
+    }
+  }
+});
+
 $("#export").addEventListener("click", () => {
   game.commit();
   const level = { ...game.level, camera: camera.toData() };

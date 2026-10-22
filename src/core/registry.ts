@@ -46,6 +46,12 @@ export interface ActorDef {
    * moved and turned. See `core/scaling.ts` for ready-made ones.
    */
   scale?: ScaleSpec;
+  /**
+   * Made from a file, like a picture. Its palette button asks for a file,
+   * and files of this kind can be dropped onto the level. `read` turns the
+   * file into props for the new actor.
+   */
+  importFile?: { accept: string; read(file: File): Promise<Props> };
   /** Set false to hide it from the editor palette. */
   palette?: boolean;
   props: PropField[];
