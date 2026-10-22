@@ -89,7 +89,15 @@ editor.events.on("change", (level) => {
   updateButtons();
 });
 
+// Loading or stopping a level always puts building back the right way up.
+game.events.on("load", () => {
+  camera.rotation = 0;
+});
+
 function openLevel(level: LevelData): void {
+  // Opening a level while playing stops it, so tidy up as Stop does.
+  game.input.clear();
+  controlPanel.hide();
   editor.loadLevel(level);
   if (level.camera) camera.set(level.camera);
   updateButtons();
@@ -145,8 +153,6 @@ function stop(): void {
   game.input.clear();
   controlPanel.hide();
   game.reset();
-  // Building is always done the right way up.
-  camera.rotation = 0;
   editor.select(editor.selected);
   updateButtons();
 }
@@ -251,10 +257,11 @@ function followPlayer(dt: number): void {
 
 /** With "Turn view" on, slowly turn the view so the gravity in the middle of the screen points down. */
 function turnView(dt: number): void {
-  if (!game.level.turnView) return;
   const g = game.gravityAt(camera.x, camera.y);
-  if (Math.hypot(g.x, g.y) < 0.5) return; // Floating: keep the view as it is.
-  let delta = viewRotationFor(g) - camera.rotation;
+  const floating = Math.hypot(g.x, g.y) < 0.5;
+  // With Turn view off, or floating with nothing to go by, ease back upright.
+  const target = game.level.turnView && !floating ? viewRotationFor(g) : 0;
+  let delta = target - camera.rotation;
   delta = Math.atan2(Math.sin(delta), Math.cos(delta));
   camera.rotation += delta * (1 - Math.exp(-dt * 3));
 }
