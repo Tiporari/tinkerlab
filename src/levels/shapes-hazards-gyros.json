@@ -1,0 +1,29 @@
+{
+  "format": "tinkerlab/level",
+  "version": 1,
+  "name": "Shapes, hazards and gyros",
+  "gravity": [0, -10],
+  "camera": { "x": 2, "y": 3, "zoom": 38 },
+  "actors": [
+    { "id": "floor-left", "type": "block", "x": -6, "y": -0.5, "props": { "width": 8, "height": 1, "friction": 0.9 } },
+    { "id": "floor-right", "type": "block", "x": 9, "y": -0.5, "props": { "width": 10, "height": 1, "friction": 0.9 } },
+    { "id": "wall-left", "type": "block", "x": -10.5, "y": 3, "props": { "width": 1, "height": 8 } },
+    { "id": "wall-right", "type": "block", "x": 14.5, "y": 3, "props": { "width": 1, "height": 8 } },
+    { "id": "pit-hazard", "type": "hazard", "x": 1, "y": -4, "props": { "width": 6, "height": 1 } },
+
+    { "id": "lander", "type": "block", "x": -7, "y": 0.4, "tags": ["player"], "props": { "width": 1.2, "height": 0.5, "dynamic": true, "density": 1, "color": "#2563eb" } },
+    { "id": "lander-engine", "type": "thruster", "x": -7, "y": 0.15, "props": { "a": "lander", "ax": 0, "ay": -0.25, "force": 14, "control": "key:ArrowUp" } },
+    { "id": "lander-gyro", "type": "gyro-angle", "x": -7, "y": 0.4, "props": { "a": "lander", "ax": 0, "ay": 0, "steer": "keys:ArrowLeft,ArrowRight", "steerRange": 25 } },
+
+    { "id": "start-1", "type": "start", "x": 4, "y": 9, "props": { "count": 6, "interval": 1.5 } },
+    { "id": "hover-deck", "type": "block", "x": 3.5, "y": 5.5, "props": { "width": 3, "height": 0.25, "dynamic": true, "color": "#0d9488" } },
+    { "id": "hover-hold", "type": "gyro-position", "x": 3.5, "y": 5.5, "props": { "a": "hover-deck", "ax": 0, "ay": 0 } },
+    { "id": "hover-tilt", "type": "gyro-angle", "x": 3.5, "y": 5.5, "props": { "a": "hover-deck", "ax": 0, "ay": 0, "hold": 12 } },
+
+    { "id": "hex-cup", "type": "polygon", "x": 13.1, "y": 0.6, "props": { "sides": 6, "size": 0.7, "hollow": true, "wall": 0.1, "color": "#f59e0b" } },
+    { "id": "triangle-1", "type": "polygon", "x": 10.8, "y": 0.5, "props": { "sides": 3, "size": 0.5, "color": "#ef4444" } },
+    { "id": "ring-1", "type": "ball", "x": 11.9, "y": 0.6, "props": { "radius": 0.5, "hollow": true, "wall": 0.08, "dynamic": true, "color": "#8b5cf6" } },
+
+    { "id": "finish-1", "type": "finish", "x": 7.5, "y": 1, "props": { "width": 1.6, "height": 2, "counts": "player" } }
+  ]
+}

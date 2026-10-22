@@ -22,6 +22,9 @@ export class Palette {
       if (def.palette === false) continue;
       const list = groups.get(def.category) ?? [];
       list.push(this.button(`place:${def.type}`, def.icon ?? "◆", def.label, def.description ?? ""));
+      def.variants?.forEach((v, i) =>
+        list.push(this.button(`place:${def.type}~${i}`, v.icon ?? def.icon ?? "◆", v.label, def.description ?? "")),
+      );
       groups.set(def.category, list);
     }
     for (const [category, buttons] of groups) {

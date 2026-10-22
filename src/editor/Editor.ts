@@ -318,7 +318,7 @@ export class Editor {
       return;
     }
 
-    const def = getActorDef(this.tool.slice("place:".length));
+    const def = getActorDef(this.placingType());
     switch (def.placement ?? "click") {
       case "click":
         this.gesture = { kind: "click", at: this.snapPt(p) };
@@ -411,7 +411,7 @@ export class Editor {
         const placement = getActorDef(this.placingType()).placement ?? "click";
         if (placement === "pin") this.finishPin(g.at);
         else if (placement === "attach") this.finishAttach(g.at);
-        else this.create({ type: this.placingType(), x: g.at.x, y: g.at.y });
+        else this.place({ type: this.placingType(), x: g.at.x, y: g.at.y });
         break;
       }
       case "connect":
@@ -441,10 +441,10 @@ export class Editor {
     const type = this.placingType();
     const length = Math.hypot(b.x - a.x, b.y - a.y);
     if (length < 0.2) {
-      this.create({ type, x: a.x, y: a.y });
+      this.place({ type, x: a.x, y: a.y });
       return;
     }
-    this.create({
+    this.place({
       type,
       x: tidy((a.x + b.x) / 2),
       y: tidy((a.y + b.y) / 2),
@@ -457,7 +457,7 @@ export class Editor {
     const points = simplifyPath(raw, 2 / this.camera.zoom);
     if (points.length < 2 || Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) < 0.05) return;
     const origin = { x: tidy(points[0].x), y: tidy(points[0].y) };
-    this.create({
+    this.place({
       type: this.placingType(),
       x: origin.x,
       y: origin.y,
@@ -480,7 +480,7 @@ export class Editor {
     if (!targetA && !targetB) return; // two points on the world would do nothing
     const anchorA = this.anchorOn(targetA, a);
     const anchorB = this.anchorOn(targetB, b);
-    this.create({
+    this.place({
       type: this.placingType(),
       x: tidy(a.x),
       y: tidy(a.y),
@@ -494,7 +494,7 @@ export class Editor {
     if (!top) return;
     const anchorA = this.anchorOn(top, p);
     const anchorB = this.anchorOn(below, p);
-    this.create({
+    this.place({
       type: this.placingType(),
       x: tidy(p.x),
       y: tidy(p.y),
@@ -506,7 +506,7 @@ export class Editor {
   private finishAttach(p: Pt): void {
     const target = this.bodiesAt(p)[0];
     const anchor = this.anchorOn(target, p);
-    this.create({
+    this.place({
       type: this.placingType(),
       x: tidy(p.x),
       y: tidy(p.y),
@@ -514,8 +514,16 @@ export class Editor {
     });
   }
 
+  /** The actor type being placed. Tool ids look like "place:polygon" or, for a palette preset, "place:polygon~0". */
   private placingType(): string {
-    return this.tool.slice("place:".length);
+    return this.tool.slice("place:".length).split("~")[0];
+  }
+
+  /** Create an actor from the current tool, with the palette preset's settings if there is one. */
+  private place(data: ActorData): Actor {
+    const variant = Number(this.tool.split("~")[1]);
+    const preset = Number.isInteger(variant) ? getActorDef(data.type).variants?.[variant]?.props : undefined;
+    return this.create(preset ? { ...data, props: { ...preset, ...data.props } } : data);
   }
 
   private cancelGesture(): void {

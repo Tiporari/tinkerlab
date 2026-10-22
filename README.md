@@ -32,6 +32,8 @@ The game has two modes. In **build** mode you edit the level; press **Play**
 | Add a ball, finish or start | pick it on the left, then click |
 | Add a ramp or wall | pick **Block**, then drag from one end to the other |
 | Draw a curve or funnel | pick **Path**, then draw |
+| Add a triangle, hexagon or other shape | pick **Polygon** (or its ▲ / ⬢ preset), then click; change **Sides** for 3 to 12 |
+| Make a hollow outline | tick **Hollow** on a block, ball or shape; **Wall** sets how thick |
 | Select, move | **Select** tool, click or drag a thing |
 | Rotate | drag the round handle above it, or **Q** / **E** (hold Shift for 1°) |
 | Nudge | arrow keys |
@@ -53,6 +55,20 @@ The game has two modes. In **build** mode you edit the level; press **Play**
 | **Piston** | drag between two things | grows and shrinks while its keys are held (↓ / ↑ by default), holds when let go |
 | **Muscle** | drag between two things | pulls its ends together while its key is held (J by default) |
 | **Thruster** | click on something, then turn it with Q / E | pushes the way it points while its key is held (↑ by default) |
+| **Angle gyro** | click on something | keeps it at the angle it was placed at; give it a **Steer** control to tilt it with keys |
+| **Position gyro** | click on something | holds that spot still, even against gravity; untick **Hold sideways** to make it hover |
+
+Gyros are PID controllers, the same idea that keeps drones level. **Strength (P)**
+pulls back toward the target, **Calming (D)** stops it wobbling past, and
+**Catch-up (I)** slowly pushes harder when something keeps leaning on it. Try
+turning Calming down to zero to see why it's there.
+
+### Hazards
+
+A **Hazard** (under Course) is a danger zone. Things tagged `player` go back to
+where they started, with their wheels and parts, and marbles are destroyed. Its
+settings change which tags it sends back or destroys, or let it destroy
+anything that moves.
 
 Every active part has a **Control** setting: a key, a pair of keys, "always on",
 or an on-screen slider. While playing, a panel in the corner lists which keys do
@@ -141,6 +157,7 @@ Optional `ActorDef` fields for the editor:
 | `icon` | a symbol or emoji for the palette button |
 | `placement` | `"click"` (default) drops it where you click; `"drag-line"` lets you drag it out, setting `width` and `angle`; `"draw-path"` lets you draw it, setting `points` |
 | `palette: false` | hides it from the palette |
+| `variants` | extra palette buttons that place it with preset settings, like the Triangle and Hexagon shapes |
 
 Actors can also override these hooks:
 
@@ -198,7 +215,10 @@ actor type's default.
 1. **Core framework and a marble run** (done)
 2. **Basic editor**: draw and drag objects, edit their settings, build and play modes (done)
 3. **Machine parts and controls**: springs, ropes, motor wheels, pistons, muscles, thrusters, keyboard and slider controls (done)
-4. **Images, scripting and bigger worlds**: image import with masking, large scrolling levels, script nodes
+4. **More shapes, hazards and gyros**: polygons and hollow outlines, palette presets, hazard zones, PID gyros (done)
+5. **A better select tool**: box select, multi-select, scale handles, dragging part ends
+6. **Groups and assemblies**: weld shapes into one, or group a machine; save them to an inventory
+7. **Images, scripting and bigger worlds**: image import with masking, gravity direction, script nodes
 
 ## License
 

@@ -36,10 +36,21 @@ export interface ActorDef {
    * hang off another actor work out their own position. Default: all three.
    */
   poseFields?: ("x" | "y" | "angle")[];
+  /**
+   * Extra palette buttons that place this type with some settings preset,
+   * e.g. a Polygon with 3 sides labelled "Triangle".
+   */
+  variants?: ActorVariant[];
   /** Set false to hide it from the editor palette. */
   palette?: boolean;
   props: PropField[];
   create(game: Game, data: ActorData): Actor;
+}
+
+export interface ActorVariant {
+  label: string;
+  icon?: string;
+  props: Props;
 }
 
 export type Placement = "click" | "drag-line" | "draw-path" | "connect" | "pin" | "attach";

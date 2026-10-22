@@ -1,6 +1,7 @@
 import { Box } from "planck";
 import { Actor } from "../core/Actor";
 import { colorField, dynamicField, materialFields } from "../core/fields";
+import { addOutline, hollowFields, rectangle } from "../core/shapes";
 import type { ActorDef } from "../core/registry";
 
 interface BlockProps extends Record<string, number | string | boolean> {
@@ -11,6 +12,8 @@ interface BlockProps extends Record<string, number | string | boolean> {
   bounciness: number;
   density: number;
   color: string;
+  hollow: boolean;
+  wall: number;
 }
 
 /** A rectangle. Fixed blocks make ramps, walls and floors; moving ones make crates and dominoes. */
@@ -24,11 +27,9 @@ export class Block extends Actor<BlockProps> {
         angle: this.angle,
       }),
     );
-    this.body.createFixture(new Box(p.width / 2, p.height / 2), {
-      density: p.density,
-      friction: p.friction,
-      restitution: p.bounciness,
-    });
+    const material = { density: p.density, friction: p.friction, restitution: p.bounciness };
+    if (p.hollow) addOutline(this.body, rectangle(p.width, p.height), p.wall, material);
+    else this.body.createFixture(new Box(p.width / 2, p.height / 2), material);
   }
 }
 
@@ -43,6 +44,7 @@ const block: ActorDef = {
     { key: "width", label: "Width", kind: "number", default: 4, min: 0.05, max: 200, step: 0.1 },
     { key: "height", label: "Height", kind: "number", default: 0.3, min: 0.05, max: 200, step: 0.1 },
     dynamicField(false),
+    ...hollowFields(),
     ...materialFields(),
     colorField("#8b7355"),
   ],
