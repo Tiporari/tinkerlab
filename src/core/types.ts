@@ -32,6 +32,11 @@ export interface ActorData {
   /** Labels other actors can look for, e.g. a finish counts actors tagged "marble". */
   tags?: string[];
   props?: Props;
+  /**
+   * What a group (an assembly or welded shape) is made of. Children use the
+   * same world coordinates as everything else, so a group is only structure.
+   */
+  children?: ActorData[];
 }
 
 export interface CameraData {

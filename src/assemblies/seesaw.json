@@ -1,0 +1,16 @@
+{
+  "format": "tinkerlab/assembly",
+  "version": 1,
+  "name": "Seesaw",
+  "description": "A plank that tips on a hinge. Drop marbles on one end.",
+  "actors": [
+    {
+      "id": "seesaw", "type": "assembly", "x": 0, "y": 0, "props": { "name": "Seesaw" },
+      "children": [
+        { "id": "seesaw-base", "type": "polygon", "x": 0, "y": -0.5, "props": { "sides": 3, "size": 0.5, "dynamic": false, "color": "#475569" } },
+        { "id": "seesaw-plank", "type": "block", "x": 0, "y": 0.08, "props": { "width": 4, "height": 0.15, "dynamic": true, "color": "#ca8a04" } },
+        { "id": "seesaw-pin", "type": "hinge", "x": 0, "y": 0, "props": { "a": "seesaw-plank", "b": "seesaw-base", "ax": 0, "ay": -0.08, "bx": 0, "by": 0.5 } }
+      ]
+    }
+  ]
+}

@@ -86,6 +86,28 @@ setting: `marble` by default, or `player` for a vehicle.
 Your work is autosaved in the browser. **Save file** downloads the level as
 JSON and **Open file** loads one, so you can keep and share levels.
 
+### Groups, assemblies and the inventory
+
+Select a few things and pick one of these in the settings panel:
+
+- **Make assembly** (Ctrl+G) keeps them together as a machine. The parts still
+  move separately and keep their own settings, like a box with thrusters.
+  Parts hanging off what you picked (a cart's wheels) come along.
+- **Weld** joins shapes into one solid thing, like a bucket made of three blocks.
+  Wheels and other parts on those shapes move onto the weld.
+
+A click picks the whole group. **Double-click** it (or press Enter) to go
+inside and pick or change one part; Esc, or a click outside, comes back out.
+**Ungroup** (Ctrl+Shift+G) takes a group apart one level at a time, so an
+assembly that holds a weld comes apart into the weld and its parts first.
+Groups can hold groups.
+
+The **Inventory** at the bottom of the tools holds assemblies you can drop
+into any level: pick one, then click where it goes. It starts with a few
+(cart, rocket, bucket, seesaw). **Save to inventory** keeps a copy of whatever
+is selected, in this browser. Point at one to download it as a file, and use
+**Open assembly file…** to add a file someone sent you.
+
 ## How it fits together
 
 ```
@@ -97,11 +119,13 @@ src/
     Renderer.ts  draws to a canvas in world units (meters, y up)
     Camera.ts    pan, zoom and rotation
     Connector.ts base class for parts attached to other actors
+    Group.ts     base class for assemblies and welds, which hold other actors
     input.ts     keys and sliders, and the control strings parts use
   editor/      build mode: tools, palette, settings panel, undo
   actors/      one file per kind of object: shapes, course pieces and machine parts
   ui/          the play-mode controls panel
   levels/      built-in levels as JSON
+  assemblies/  starter assemblies for the inventory, as JSON
 tests/         headless tests that run levels without a browser
 ```
 
@@ -215,6 +239,21 @@ which gives a number from -1 to 1. Control strings are described in
 `angle` is in radians, counter-clockwise. Any prop you leave out uses the
 actor type's default.
 
+Groups nest the things they hold under `children`. Children use the same
+world coordinates as everything else; a group is only structure.
+
+```json
+{ "type": "assembly", "x": 0, "y": 0, "props": { "name": "Cart" }, "children": [
+  { "id": "body", "type": "block", "x": 0, "y": 0.2, "props": { "width": 2.6, "dynamic": true } },
+  { "type": "wheel", "x": -0.9, "y": -0.15, "props": { "a": "body", "ax": -0.9, "ay": -0.35 } }
+] }
+```
+
+An assembly file is the same idea, centred on 0, 0:
+`{ "format": "tinkerlab/assembly", "version": 1, "name": "Cart", "actors": [ ... ] }`.
+Every file in `src/assemblies/` shows up in the inventory as a starter, so
+adding one is a matter of dropping a file there.
+
 ## Roadmap
 
 1. **Core framework and a marble run** (done)
@@ -222,7 +261,7 @@ actor type's default.
 3. **Machine parts and controls**: springs, ropes, motor wheels, pistons, muscles, thrusters, keyboard and slider controls (done)
 4. **More shapes, hazards and gyros**: polygons and hollow outlines, palette presets, hazard zones, PID gyros (done)
 5. **A better select tool**: box select, multi-select, scale handles, dragging part ends (done)
-6. **Groups and assemblies**: weld shapes into one, or group a machine; save them to an inventory
+6. **Groups and assemblies**: weld shapes into one, or group a machine; save them to an inventory (done)
 7. **Images, scripting and bigger worlds**: image import with masking, gravity direction, script nodes
 
 ## License

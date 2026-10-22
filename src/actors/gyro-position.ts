@@ -30,10 +30,6 @@ export class PositionGyro extends Connector<PositionGyroProps> {
     this.trackPosition();
   }
 
-  dependsOn(): string[] {
-    return this.props.a ? [this.props.a] : [];
-  }
-
   update(dt: number): void {
     const p = this.props;
     const body = this.bodyA;

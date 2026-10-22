@@ -1,4 +1,4 @@
-import { Box, Polygon, type Body, type FixtureOpt } from "planck";
+import { Box, Chain, Circle, Edge, Polygon, type Body, type Fixture, type FixtureOpt, type Shape } from "planck";
 import type { PropField } from "./types";
 
 export type Pt = { x: number; y: number };
@@ -71,4 +71,43 @@ export function hollowFields(): PropField[] {
     { key: "hollow", label: "Hollow", kind: "boolean", default: false, help: "Make it an outline you can put things inside." },
     { key: "wall", label: "Wall thickness", kind: "number", default: 0.1, min: 0.02, max: 2, step: 0.01 },
   ];
+}
+
+/**
+ * Copy a fixture from one body onto another, keeping it at the same place in
+ * the world. Used to weld several shapes into one body. Returns the copy.
+ */
+export function copyFixture(fixture: Fixture, from: Body, to: Body, userData?: unknown): Fixture {
+  const move = (v: Pt) => to.getLocalPoint(from.getWorldPoint(v));
+  const shape = fixture.getShape();
+  let copy: Shape;
+  switch (shape.getType()) {
+    case "circle": {
+      const c = shape as unknown as { m_p: Pt; m_radius: number };
+      copy = new Circle(move(c.m_p), c.m_radius);
+      break;
+    }
+    case "edge": {
+      const e = shape as unknown as { m_vertex1: Pt; m_vertex2: Pt };
+      copy = new Edge(move(e.m_vertex1), move(e.m_vertex2));
+      break;
+    }
+    case "chain": {
+      // A closed chain already repeats its first point at the end, so an open copy has the same shape.
+      const ch = shape as unknown as { m_vertices: Pt[] };
+      copy = new Chain(ch.m_vertices.map(move), false);
+      break;
+    }
+    default: {
+      const poly = shape as unknown as { m_vertices: Pt[] };
+      copy = new Polygon(poly.m_vertices.map(move));
+    }
+  }
+  return to.createFixture(copy, {
+    density: fixture.getDensity(),
+    friction: fixture.getFriction(),
+    restitution: fixture.getRestitution(),
+    isSensor: fixture.isSensor(),
+    userData,
+  });
 }

@@ -1,0 +1,16 @@
+{
+  "format": "tinkerlab/assembly",
+  "version": 1,
+  "name": "Cart",
+  "description": "A box on two motor wheels. Drive it with ← and →.",
+  "actors": [
+    {
+      "id": "cart", "type": "assembly", "x": 0, "y": 0, "props": { "name": "Cart" },
+      "children": [
+        { "id": "cart-body", "type": "block", "x": 0, "y": 0.2, "props": { "width": 2.6, "height": 0.5, "dynamic": true, "color": "#2563eb" } },
+        { "id": "cart-wheel-back", "type": "wheel", "x": -0.9, "y": -0.15, "props": { "a": "cart-body", "ax": -0.9, "ay": -0.35, "radius": 0.45 } },
+        { "id": "cart-wheel-front", "type": "wheel", "x": 0.9, "y": -0.15, "props": { "a": "cart-body", "ax": 0.9, "ay": -0.35, "radius": 0.45 } }
+      ]
+    }
+  ]
+}

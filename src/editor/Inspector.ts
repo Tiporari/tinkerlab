@@ -1,8 +1,10 @@
 import type { Actor } from "../core/Actor";
+import { Group } from "../core/Group";
 import { CONTROL_PRESETS } from "../core/input";
 import type { PropField, PropValue } from "../core/types";
 import type { Editor } from "./Editor";
 import { tidy } from "./geometry";
+import type { Inventory } from "./Inventory";
 
 const DEG = Math.PI / 180;
 
@@ -17,6 +19,7 @@ export class Inspector {
   constructor(
     readonly root: HTMLElement,
     readonly editor: Editor,
+    readonly inventory?: Inventory,
   ) {
     editor.events.on("selection", (actor) => this.show(actor));
     editor.events.on("change", () => this.show(editor.selected, true));
@@ -48,14 +51,40 @@ export class Inspector {
     list.className = "muted";
     list.textContent = [...counts].map(([label, n]) => (n > 1 ? `${n} × ${label}` : label)).join(", ");
     panel.append(list);
+    const grouping = document.createElement("div");
+    grouping.className = "inspector-actions";
+    grouping.append(
+      actionButton("Make assembly", "Ctrl+G: keep them together, each part keeps its own settings", () => this.group("assembly")),
+      actionButton("Weld", "Stick shapes together into one solid thing", () => this.group("weld")),
+    );
+    panel.append(grouping, this.actions());
+    return panel;
+  }
+
+  private group(type: "assembly" | "weld"): void {
+    const problem = this.editor.groupSelected(type);
+    if (problem) window.alert(problem);
+  }
+
+  /** Duplicate, delete and save buttons for whatever is selected. */
+  private actions(): HTMLElement {
     const actions = document.createElement("div");
     actions.className = "inspector-actions";
     actions.append(
       actionButton("Duplicate", "Ctrl+D", () => this.editor.duplicateSelected()),
       actionButton("Delete", "Del", () => this.editor.deleteSelected(), "danger"),
     );
-    panel.append(actions);
-    return panel;
+    if (this.inventory) actions.append(actionButton("Save to inventory", "Keep a copy to drop into any level", () => this.save()));
+    return actions;
+  }
+
+  private save(): void {
+    const actors = this.editor.selectionData();
+    if (!actors || !this.inventory) return;
+    const first = this.editor.selected;
+    const suggested = String(first?.props.name ?? (first ? first.def.label : "My assembly"));
+    const name = window.prompt("Name it:", suggested);
+    if (name) this.inventory.add(name.trim() || suggested, actors);
   }
 
   private actorPanel(actor: Actor): HTMLElement {
@@ -98,13 +127,19 @@ export class Inspector {
     );
     panel.append(row("Tags", tags, 'Labels other things look for. Tag a vehicle "player" and the camera follows it while playing.'));
 
-    const actions = document.createElement("div");
-    actions.className = "inspector-actions";
-    actions.append(
-      actionButton("Duplicate", "Ctrl+D", () => this.editor.duplicateSelected()),
-      actionButton("Delete", "Del", () => this.editor.deleteSelected(), "danger"),
-    );
-    panel.append(actions);
+    if (actor instanceof Group) {
+      const grouping = document.createElement("div");
+      grouping.className = "inspector-actions";
+      grouping.append(
+        actionButton("Go inside", "Double-click: pick and change the parts inside", () => this.editor.enterGroup(actor)),
+        actionButton("Ungroup", "Ctrl+Shift+G: take it apart, one level", () => this.editor.ungroupSelected()),
+      );
+      const inside = document.createElement("p");
+      inside.className = "muted";
+      inside.textContent = `Holds ${actor.childIds.length} thing${actor.childIds.length === 1 ? "" : "s"}.`;
+      panel.append(inside, grouping);
+    }
+    panel.append(this.actions());
     return panel;
   }
 

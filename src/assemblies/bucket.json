@@ -1,0 +1,16 @@
+{
+  "format": "tinkerlab/assembly",
+  "version": 1,
+  "name": "Bucket",
+  "description": "Three blocks welded into one solid bucket. Catch marbles in it.",
+  "actors": [
+    {
+      "id": "bucket", "type": "weld", "x": 0, "y": 0, "props": { "name": "Bucket" },
+      "children": [
+        { "id": "bucket-floor", "type": "block", "x": 0, "y": -0.45, "props": { "width": 1.6, "height": 0.15, "dynamic": true, "color": "#a16207" } },
+        { "id": "bucket-left", "type": "block", "x": -0.725, "y": 0, "props": { "width": 0.15, "height": 1, "dynamic": true, "color": "#a16207" } },
+        { "id": "bucket-right", "type": "block", "x": 0.725, "y": 0, "props": { "width": 0.15, "height": 1, "dynamic": true, "color": "#a16207" } }
+      ]
+    }
+  ]
+}

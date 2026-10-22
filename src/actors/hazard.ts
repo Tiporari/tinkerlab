@@ -29,9 +29,9 @@ export class Hazard extends Actor<HazardProps> {
   onContact(other: Actor | null): void {
     if (!other || other === this) return;
     const p = this.props;
-    // A wheel or thruster on a player's cart counts as the cart.
-    const owner = this.ownerOf(other);
-    if (p.respawns && owner.tags.has(p.respawns)) {
+    // A wheel or thruster on a player's cart counts as the cart, and a piece of a player's assembly as the assembly.
+    const owner = this.game.tagged(other, p.respawns);
+    if (owner) {
       this.flash = 0.5;
       this.game.respawn(owner);
       this.game.events.emit("hazard", { hazard: this, actor: owner, result: "respawned" });
@@ -43,18 +43,6 @@ export class Hazard extends Actor<HazardProps> {
       this.game.remove(other);
       this.game.events.emit("hazard", { hazard: this, actor: other, result: "removed" });
     }
-  }
-
-  /** Follow attachments up to the thing a part belongs to. */
-  private ownerOf(actor: Actor): Actor {
-    let current = actor;
-    for (let i = 0; i < 10; i++) {
-      if (current.tags.has(this.props.respawns)) return current;
-      const parent = current.dependsOn().map((id) => this.game.find(id)).find(Boolean);
-      if (!parent) return actor;
-      current = parent;
-    }
-    return actor;
   }
 
   update(dt: number): void {
