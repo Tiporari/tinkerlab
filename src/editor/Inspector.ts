@@ -1,4 +1,5 @@
 import type { Actor } from "../core/Actor";
+import { gravityDirection, gravityFromAngle, gravityStrength } from "../core/gravity";
 import { Group } from "../core/Group";
 import { CONTROL_PRESETS } from "../core/input";
 import type { PropField, PropValue } from "../core/types";
@@ -157,13 +158,35 @@ export class Inspector {
     });
     panel.append(row("Name", name));
 
+    const setGravity = (strength: number, direction: number, record: boolean) => {
+      const [x, y] = gravityFromAngle(strength, direction);
+      game.level.gravity = [x, y];
+      game.world.setGravity({ x, y });
+      if (record) this.editor.commit();
+    };
+    // Kept here so turning the direction with zero strength doesn't forget it.
+    let strength = tidy(gravityStrength(game.level.gravity), 2);
+    let direction = tidy(gravityDirection(game.level.gravity) / DEG, 1);
     panel.append(
-      this.numberRow("Gravity", -game.level.gravity[1], { min: -30, max: 30, step: 0.5, slider: true }, (v, rec) => {
-        game.level.gravity = [game.level.gravity[0], -v];
-        game.world.setGravity({ x: game.level.gravity[0], y: -v });
-        if (rec) this.editor.commit();
-      }),
+      this.numberRow("Gravity", strength, { min: 0, max: 40, step: 0.5, slider: true }, (v, rec) => {
+        strength = v;
+        setGravity(v, direction * DEG, rec);
+      }, "How hard things fall. 10 is like Earth, 0 floats."),
+      this.numberRow("Down is°", direction, { min: -180, max: 180, step: 5, slider: true }, (v, rec) => {
+        direction = v;
+        setGravity(strength, v * DEG, rec);
+      }, "Which way things fall. 0 is down, 90 is to the right, 180 is up."),
     );
+
+    const turn = document.createElement("input");
+    turn.type = "checkbox";
+    turn.checked = Boolean(game.level.turnView);
+    turn.addEventListener("change", () => {
+      if (turn.checked) game.level.turnView = true;
+      else delete game.level.turnView;
+      this.editor.commit();
+    });
+    panel.append(row("Turn view", turn, "While playing, turn the view so down is always down the screen, even in gravity zones and around planets."));
 
     const count = document.createElement("p");
     count.className = "muted";

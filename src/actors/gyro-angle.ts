@@ -1,3 +1,4 @@
+import { gravityDirection, gravityStrength } from "../core/gravity";
 import { Connector, connectorFields, type ConnectorProps } from "../core/Connector";
 import type { Renderer } from "../core/Renderer";
 import type { ActorDef } from "../core/registry";
@@ -12,6 +13,7 @@ interface AngleGyroProps extends ConnectorProps {
   ki: number;
   kd: number;
   maxTorque: number;
+  followGravity: boolean;
 }
 
 const DEG = Math.PI / 180;
@@ -26,9 +28,14 @@ export class AngleGyro extends Connector<AngleGyroProps> {
   private integral = 0;
   private target = 0;
   private active = false;
+  /** Which way gravity pointed where it was placed, and how far it has turned since. */
+  private placedDown = 0;
+  private downTurn = 0;
 
   build(): void {
     this.base = this.bodyA.getAngle();
+    this.placedDown = this.downHere() ?? 0;
+    this.downTurn = 0;
     this.target = this.base + this.props.hold * DEG;
     this.integral = 0;
     this.trackPosition();
@@ -38,8 +45,13 @@ export class AngleGyro extends Connector<AngleGyroProps> {
     const p = this.props;
     const body = this.bodyA;
     this.active = Math.abs(this.game.input.axis(p.control)) > 0;
+    if (p.followGravity) {
+      // Around a planet or in a gravity zone, "upright" turns with gravity. Floating, it keeps the last one.
+      const down = this.downHere();
+      if (down !== null) this.downTurn = wrapAngle(down - this.placedDown);
+    }
     // Steering right turns clockwise, so it's negative in maths terms.
-    this.target = this.base + (p.hold - this.game.input.axis(p.steer) * p.steerRange) * DEG;
+    this.target = this.base + this.downTurn + (p.hold - this.game.input.axis(p.steer) * p.steerRange) * DEG;
     if (!this.active || body.getType() !== "dynamic") {
       this.integral = 0;
       return;
@@ -50,6 +62,13 @@ export class AngleGyro extends Connector<AngleGyroProps> {
     const inertia = Math.max(body.getInertia(), 1e-3);
     const torque = inertia * (p.kp * error + p.ki * this.integral - p.kd * body.getAngularVelocity());
     body.applyTorque(clamp(torque, -p.maxTorque, p.maxTorque), true);
+  }
+
+  /** The direction of gravity where it's bolted on, or null if there's hardly any. */
+  private downHere(): number | null {
+    const at = this.worldA();
+    const g = this.game.gravityAt(at.x, at.y);
+    return gravityStrength(g) < 0.5 ? null : gravityDirection(g);
   }
 
   protected outline() {
@@ -117,6 +136,13 @@ const angleGyro: ActorDef = {
     { key: "steer", label: "Steer", kind: "control", default: "", help: "A control that turns the target angle." },
     { key: "steerRange", label: "Steer range°", kind: "number", default: 45, min: 0, max: 180, step: 1 },
     ...pidFields(200, 20, 25),
+    {
+      key: "followGravity",
+      label: "Turn with gravity",
+      kind: "boolean",
+      default: true,
+      help: "Where gravity points another way, like around a planet, it stays upright compared with the new down.",
+    },
     { key: "maxTorque", label: "Max twist", kind: "number", default: 300, min: 1, max: 10000, step: 1, help: "The most turning force it can use." },
   ],
   create: (game, data) => new AngleGyro(game, data),

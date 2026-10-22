@@ -1,0 +1,17 @@
+{
+  "format": "tinkerlab/level",
+  "version": 1,
+  "name": "Little planet",
+  "gravity": [0, -10],
+  "turnView": true,
+  "camera": {"x": 0, "y": 6, "zoom": 30},
+  "actors": [
+    {"id": "planet", "type": "gravity-well", "x": 0, "y": 2, "props": {"radius": 7, "planet": 2.5}},
+    {"id": "rock-1", "type": "ball", "x": -2.7, "y": 1, "props": {"radius": 0.35, "color": "#78716c"}},
+    {"id": "rock-2", "type": "polygon", "x": 2.6, "y": 0.4, "props": {"sides": 5, "size": 0.4, "dynamic": true, "color": "#a8a29e"}},
+    {"id": "moon", "type": "gravity-well", "x": 0, "y": 17, "props": {"radius": 4.5, "planet": 1.5, "color": "#cbd5e1"}},
+    {"id": "moon-flag", "type": "finish", "x": 0, "y": 19.1, "props": {"width": 1.6, "height": 1.2, "counts": "player"}},
+    {"id": "fall", "type": "hazard", "x": 0, "y": -14, "props": {"width": 120, "height": 1}},
+    {"id": "rocket", "type": "assembly", "x": 0, "y": 5.25, "tags": ["player"], "props": {"name": "Rocket"}, "children": [{"id": "rocket-hull", "type": "weld", "x": 0, "y": 5.25, "props": {"name": "Hull"}, "children": [{"id": "rocket-body", "type": "block", "x": 0, "y": 5.25, "props": {"width": 0.6, "height": 1.4, "dynamic": true, "color": "#dc2626"}}, {"id": "rocket-nose", "type": "polygon", "x": 0, "y": 6.11, "props": {"sides": 3, "size": 0.35, "dynamic": true, "color": "#e2e8f0"}}]}, {"id": "rocket-engine", "type": "thruster", "x": 0, "y": 4.55, "props": {"a": "rocket-body", "ax": 0, "ay": -0.7, "force": 15}}, {"id": "rocket-gyro", "type": "gyro-angle", "x": 0, "y": 5.25, "props": {"a": "rocket-body", "ax": 0, "ay": 0, "steer": "keys:ArrowLeft,ArrowRight", "steerRange": 60}}]}
+  ]
+}

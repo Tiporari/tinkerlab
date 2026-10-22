@@ -3,6 +3,7 @@ import { Camera } from "./core/Camera";
 import { Game } from "./core/Game";
 import { Group } from "./core/Group";
 import { Renderer } from "./core/Renderer";
+import { viewRotationFor } from "./core/gravity";
 import { attachViewControls } from "./core/viewControls";
 import type { LevelData } from "./core/types";
 import { Editor } from "./editor/Editor";
@@ -88,7 +89,15 @@ editor.events.on("change", (level) => {
   updateButtons();
 });
 
+// Loading or stopping a level always puts building back the right way up.
+game.events.on("load", () => {
+  camera.rotation = 0;
+});
+
 function openLevel(level: LevelData): void {
+  // Opening a level while playing stops it, so tidy up as Stop does.
+  game.input.clear();
+  controlPanel.hide();
   editor.loadLevel(level);
   if (level.camera) camera.set(level.camera);
   updateButtons();
@@ -238,9 +247,23 @@ function followPlayer(dt: number): void {
   const player = tagged instanceof Group ? [tagged, ...tagged.descendants()].find((a) => a.body) : tagged;
   if (!player?.body) return;
   const p = player.body.getPosition();
+  // Look a little "above" it, whichever way up is.
+  const g = game.gravityAt(p.x, p.y);
+  const n = Math.hypot(g.x, g.y) || 1;
   const ease = 1 - Math.exp(-dt * 4);
-  camera.x += (p.x - camera.x) * ease;
-  camera.y += (p.y + 1 - camera.y) * ease;
+  camera.x += (p.x - (g.x / n) * 1 - camera.x) * ease;
+  camera.y += (p.y - (g.y / n) * 1 - camera.y) * ease;
+}
+
+/** With "Turn view" on, slowly turn the view so the gravity in the middle of the screen points down. */
+function turnView(dt: number): void {
+  const g = game.gravityAt(camera.x, camera.y);
+  const floating = Math.hypot(g.x, g.y) < 0.5;
+  // With Turn view off, or floating with nothing to go by, ease back upright.
+  const target = game.level.turnView && !floating ? viewRotationFor(g) : 0;
+  let delta = target - camera.rotation;
+  delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+  camera.rotation += delta * (1 - Math.exp(-dt * 3));
 }
 
 // ---- Loop --------------------------------------------------------------------
@@ -255,7 +278,10 @@ function frame(now: number): void {
   const dt = (now - last) / 1000;
   game.tick(dt);
   last = now;
-  if (game.started) followPlayer(dt);
+  if (game.started) {
+    followPlayer(dt);
+    turnView(dt);
+  }
   renderer.render(game, (r) => editor.drawOverlay(r));
   if (game.started) {
     const timeText = lastFinishTime === null ? "" : ` · last at ${lastFinishTime.toFixed(1)}s`;

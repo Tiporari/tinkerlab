@@ -2,6 +2,7 @@ import { World, Vec2, type Body, type Contact } from "planck";
 import { Actor, reserveId } from "./Actor";
 import { Connector } from "./Connector";
 import { EventBus } from "./events";
+import type { Gravity, GravitySource } from "./gravity";
 import { Group } from "./Group";
 import { Input } from "./input";
 import { getActorDef } from "./registry";
@@ -372,10 +373,46 @@ export class Game {
   /** Run exactly one fixed physics step. */
   step(): void {
     for (const actor of [...this.actors]) actor.update?.(STEP);
+    this.applyGravityFields();
     this.world.step(STEP);
     this.time += STEP;
     this.flushRemovals();
     this.flushRespawns();
+  }
+
+  /** Actors that change gravity where they are, like gravity zones. */
+  gravitySources(): (Actor & GravitySource)[] {
+    return this.actors.filter((a): a is Actor & GravitySource => typeof (a as Partial<GravitySource>).bendGravity === "function");
+  }
+
+  /** The gravity something at this world point feels: the level's, changed by any gravity zones there. */
+  gravityAt(x: number, y: number, sources = this.gravitySources()): Gravity {
+    const level = this.world.getGravity();
+    let g: Gravity = { x: level.x, y: level.y };
+    for (const source of sources) g = source.bendGravity(x, y, g);
+    return g;
+  }
+
+  /**
+   * The physics engine only knows the level's gravity, so for every moving
+   * body inside a gravity zone, push it by the difference.
+   */
+  private applyGravityFields(): void {
+    const sources = this.gravitySources();
+    if (!sources.length) return;
+    const level = this.world.getGravity();
+    for (let b = this.world.getBodyList(); b; b = b.getNext()) {
+      if (!b.isDynamic() || !b.isAwake()) continue;
+      const scale = b.getGravityScale();
+      if (scale === 0) continue;
+      const c = b.getWorldCenter();
+      const g = this.gravityAt(c.x, c.y, sources);
+      const dx = g.x - level.x;
+      const dy = g.y - level.y;
+      if (dx === 0 && dy === 0) continue;
+      const m = b.getMass() * scale;
+      b.applyForceToCenter(Vec2(dx * m, dy * m), false);
+    }
   }
 
   /**

@@ -53,6 +53,8 @@ export interface LevelData {
   name: string;
   /** Meters per second squared; y points up. */
   gravity: [number, number];
+  /** While playing, turn the view so gravity always points down the screen. */
+  turnView?: boolean;
   camera?: CameraData;
   actors: ActorData[];
 }
