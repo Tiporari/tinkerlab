@@ -15,7 +15,7 @@ export class Palette {
 
   private build(): void {
     this.root.replaceChildren();
-    this.root.append(this.button("select", "↖", "Select", "Pick, move and rotate things. Drag empty space to pan."));
+    this.root.append(this.button("select", "↖", "Select", "Pick, move, turn and resize things. Drag a box around several to pick them all; Shift+click adds or removes one."));
 
     const groups = new Map<string, HTMLElement[]>();
     for (const def of listActorDefs()) {

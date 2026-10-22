@@ -3,6 +3,7 @@ import { Actor } from "../core/Actor";
 import { colorField, dynamicField, materialFields } from "../core/fields";
 import { addOutline, circlePoints, hollowFields } from "../core/shapes";
 import type { ActorDef } from "../core/registry";
+import { scaleUniform } from "../core/scaling";
 
 interface BallProps extends Record<string, number | string | boolean> {
   radius: number;
@@ -39,6 +40,7 @@ const ball: ActorDef = {
   category: "Shapes",
   icon: "●",
   description: "A round object. Leave it moving for marbles, fix it in place for pegs.",
+  scale: scaleUniform("radius"),
   props: [
     { key: "radius", label: "Radius", kind: "number", default: 0.25, min: 0.05, max: 10, step: 0.05 },
     dynamicField(true),

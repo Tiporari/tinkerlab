@@ -2,6 +2,7 @@ import { Box } from "planck";
 import { Actor } from "../core/Actor";
 import type { Renderer } from "../core/Renderer";
 import type { ActorDef } from "../core/registry";
+import { scaleBox } from "../core/scaling";
 
 interface HazardProps extends Record<string, number | string | boolean> {
   width: number;
@@ -96,6 +97,7 @@ const hazard: ActorDef = {
   category: "Course",
   icon: "☠",
   description: "A danger zone. Sends players back to the start and destroys marbles.",
+  scale: scaleBox(),
   props: [
     { key: "width", label: "Width", kind: "number", default: 3, min: 0.2, max: 100, step: 0.1 },
     { key: "height", label: "Height", kind: "number", default: 0.6, min: 0.2, max: 100, step: 0.1 },

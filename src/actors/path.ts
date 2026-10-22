@@ -2,6 +2,7 @@ import { Chain } from "planck";
 import { Actor } from "../core/Actor";
 import { colorField, materialFields } from "../core/fields";
 import type { ActorDef } from "../core/registry";
+import { scalePoints } from "../core/scaling";
 
 interface PathProps extends Record<string, number | string | boolean | number[][]> {
   points: number[][];
@@ -39,6 +40,7 @@ const path: ActorDef = {
   icon: "〰",
   placement: "draw-path",
   description: "A drawn line that things can roll along.",
+  scale: scalePoints(),
   props: [
     {
       key: "points",
